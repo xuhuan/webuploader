@@ -126,9 +126,11 @@ import com.utils.URLStreamProgress;
 					_blobName = blob.name;
 				} 
 			}
+
+            // Uploader.log(["forceUrlStream is : ", _options.forceURLStream]);
 						
 			if (blob && _options.method == 'POST') {
-				if (_multipart && blob.isFileRef() && Utils.isEmptyObj(_headers)) {
+				if (_multipart && blob.isFileRef() && Utils.isEmptyObj(_headers) && (!meta.hasOwnProperty("forceURLStream") || !meta.forceURLStream)) {
                     _uploadFileRef(blob);
 				} else {
 					_preloadBlob(blob, _doURLStreamRequest);
@@ -163,7 +165,7 @@ import com.utils.URLStreamProgress;
         }
 		
 		public function getResponse():String {
-            return escape(_getResponse());
+            return encodeURIComponent(_getResponse());
 		}
 		
 		public function getResponseAsJson() : Object
@@ -171,8 +173,13 @@ import com.utils.URLStreamProgress;
             var ret:Object;
 
             try {
-                var str:String = getResponse();
-                ret = com.adobe.serialization.json.JSON.decode(_getResponse());
+                var str:String = _getResponse();
+
+                if (!str || !str.match(/^\s*{/)) {
+                    return {};
+                }
+
+                ret = com.adobe.serialization.json.JSON.decode(str);
             } catch( e:Error ) {
                 ret = {};
             }

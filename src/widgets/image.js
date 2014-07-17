@@ -103,7 +103,14 @@ define([
          *     crop: false,
          *
          *     // 是否保留头部meta信息。
-         *     preserveHeaders: true
+         *     preserveHeaders: true,
+         *
+         *     // 如果发现压缩后文件大小比原来还大，则使用原来图片
+         *     // 此属性可能会影响图片自动纠正功能
+         *     noCompressIfLarger: false,
+         *
+         *     // 单位字节，如果图片大小小于此值，不会采用压缩。
+         *     compressSize: 0
          * }
          * ```
          */
@@ -118,9 +125,6 @@ define([
     });
 
     return Uploader.register({
-        'make-thumb': 'makeThumb',
-        'before-send-file': 'compressImage'
-    }, {
 
 
         /**
@@ -181,8 +185,6 @@ define([
             image = new Image( opts );
 
             image.once( 'load', function() {
-                var ret;
-
                 file._info = file._info || image.info();
                 file._meta = file._meta || image.meta();
 
@@ -206,8 +208,8 @@ define([
                 image.destroy();
             });
 
-            image.once( 'error', function() {
-                cb( true );
+            image.once( 'error', function( reason ) {
+                cb( reason || true );
                 image.destroy();
             });
 
@@ -218,14 +220,17 @@ define([
             });
         },
 
-        compressImage: function( file ) {
+        beforeSendFile: function( file ) {
             var opts = this.options.compress || this.options.resize,
-                compressSize = opts && opts.compressSize || 300 * 1024,
+                compressSize = opts && opts.compressSize || 0,
+                noCompressIfLarger = opts && opts.noCompressIfLarger || false,
                 image, deferred;
 
             file = this.request( 'get-file', file );
 
-            // 只预览图片格式。
+            // 只压缩 jpeg 图片格式。
+            // gif 可能会丢失针
+            // bmp png 基本上尺寸都不大，且压缩比比较小。
             if ( !opts || !~'image/jpeg,image/jpg'.indexOf( file.type ) ||
                     file.size < compressSize ||
                     file._compressed ) {
@@ -275,7 +280,7 @@ define([
                     size = file.size;
 
                     // 如果压缩后，比原来还大则不用压缩后的。
-                    if ( blob.size < size ) {
+                    if ( !noCompressIfLarger || blob.size < size ) {
                         // file.source.destroy && file.source.destroy();
                         file.source = blob;
                         file.size = blob.size;

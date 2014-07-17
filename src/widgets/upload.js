@@ -99,7 +99,23 @@ define([
             chunks = chunkSize ? Math.ceil( total / chunkSize ) : 1,
             start = 0,
             index = 0,
-            len;
+            len, api;
+
+        api = {
+            file: file,
+
+            has: function() {
+                return !!pending.length;
+            },
+
+            shift: function() {
+                return pending.shift();
+            },
+
+            unshift: function( block ) {
+                pending.unshift( block );
+            }
+        };
 
         while ( index < chunks ) {
             len = Math.min( chunkSize, total - start );
@@ -110,7 +126,8 @@ define([
                 end: chunkSize ? (start + len) : total,
                 total: total,
                 chunks: chunks,
-                chunk: index++
+                chunk: index++,
+                cuted: api
             });
             start += len;
         }
@@ -118,25 +135,10 @@ define([
         file.blocks = pending.concat();
         file.remaning = pending.length;
 
-        return {
-            file: file,
-
-            has: function() {
-                return !!pending.length;
-            },
-
-            fetch: function() {
-                return pending.shift();
-            }
-        };
+        return api;
     }
 
     Uploader.register({
-        'start-upload': 'start',
-        'stop-upload': 'stop',
-        'skip-file': 'skipFile',
-        'is-in-progress': 'isInProgress'
-    }, {
 
         init: function() {
             var owner = this.owner;
@@ -146,14 +148,18 @@ define([
             // 记录当前正在传的数据，跟threads相关
             this.pool = [];
 
+            // 缓存分好片的文件。
+            this.stack = [];
+
             // 缓存即将上传的文件。
             this.pending = [];
 
-            // 跟踪还有多少分片没有完成上传。
+            // 跟踪还有多少分片在上传中但是没有完成上传。
             this.remaning = 0;
             this.__tick = Base.bindFn( this._tick, this );
 
             owner.on( 'uploadComplete', function( file ) {
+                
                 // 把其他块取消了。
                 file.blocks && $.each( file.blocks, function( _, v ) {
                     v.transport && (v.transport.abort(), v.transport.destroy());
@@ -165,6 +171,17 @@ define([
             });
         },
 
+        reset: function() {
+            this.request( 'stop-upload', true );
+            this.runing = false;
+            this.pool = [];
+            this.stack = [];
+            this.pending = [];
+            this.remaning = 0;
+            this._trigged = false;
+            this._promise = null;
+        },
+
         /**
          * @event startUpload
          * @description 当开始上传流程时触发。
@@ -173,17 +190,48 @@ define([
 
         /**
          * 开始上传。此方法可以从初始状态调用开始上传流程，也可以从暂停状态调用，继续上传流程。
+         *
+         * 可以指定开始某一个文件。
          * @grammar upload() => undefined
+         * @grammar upload( file | fileId) => undefined
          * @method upload
          * @for  Uploader
          */
-        start: function() {
+        startUpload: function(file) {
             var me = this;
 
             // 移出invalid的文件
             $.each( me.request( 'get-files', Status.INVALID ), function() {
                 me.request( 'remove-file', this );
             });
+
+            // 如果指定了开始某个文件，则只开始指定文件。
+            if ( file ) {
+                file = file.id ? file : me.request( 'get-file', file );
+
+                if (file.getStatus() === Status.INTERRUPT) {
+                    $.each( me.pool, function( _, v ) {
+                    
+                        // 之前暂停过。
+                        if (v.file !== file) {
+                            return;
+                        }
+
+                        v.transport && v.transport.send();
+                    });
+                    
+                    file.setStatus( Status.QUEUED );
+                } else if (file.getStatus() === Status.PROGRESS) {
+                    return;
+                } else {
+                    file.setStatus( Status.QUEUED );
+                }
+            } else {
+                $.each( me.request( 'get-files', [ Status.INITED,
+                        Status.INTERRUPT ] ), function() {
+                    this.setStatus( Status.QUEUED );
+                });
+            }
 
             if ( me.runing ) {
                 return;
@@ -202,9 +250,14 @@ define([
                 }
             });
 
+            file || $.each( me.request( 'get-files',
+                    Status.INTERRUPT ), function() {
+                this.setStatus( Status.QUEUED );
+            });
+
             me._trigged = false;
-            me.owner.trigger('startUpload');
             Base.nextTick( me.__tick );
+            me.owner.trigger('startUpload');
         },
 
         /**
@@ -215,16 +268,48 @@ define([
 
         /**
          * 暂停上传。第一个参数为是否中断上传当前正在上传的文件。
+         *
+         * 如果第一个参数是文件，则只暂停指定文件。
          * @grammar stop() => undefined
          * @grammar stop( true ) => undefined
+         * @grammar stop( file ) => undefined
          * @method stop
          * @for  Uploader
          */
-        stop: function( interrupt ) {
+        stopUpload: function( file, interrupt ) {
             var me = this;
+
+            if (file === true) {
+                interrupt = file;
+                file = null;
+            }
 
             if ( me.runing === false ) {
                 return;
+            }
+
+            // 如果只是暂停某个文件。
+            if ( file ) {
+                file = file.id ? file : me.request( 'get-file', file );
+
+                if (file.getStatus() !== Status.PROGRESS) {
+                    return;
+                }
+
+                file.setStatus( Status.INTERRUPT );
+                $.each( me.pool, function( _, v ) {
+                    
+                    // 只 abort 指定的文件。
+                    if (v.file !== file) {
+                        return;
+                    }
+
+                    v.transport && v.transport.abort();
+                    v.cuted.unshift(v);
+                    me._popBlock(v);
+                });
+
+                return Base.nextTick( me.__tick );
             }
 
             me.runing = false;
@@ -238,6 +323,37 @@ define([
         },
 
         /**
+         * @method cancelFile
+         * @grammar cancelFile( file ) => undefined
+         * @grammar cancelFile( id ) => undefined
+         * @param {File|id} file File对象或这File对象的id
+         * @description 标记文件状态为已取消, 同时将中断文件传输。
+         * @for  Uploader
+         * @example
+         *
+         * $li.on('click', '.remove-this', function() {
+         *     uploader.cancelFile( file );
+         * })
+         */
+        cancelFile: function( file ) {
+            file = file.id ? file : this.request( 'get-file', file );
+
+            // 如果正在上传。
+            file.blocks && $.each( file.blocks, function( _, v ) {
+                var _tr = v.transport;
+
+                if ( _tr ) {
+                    _tr.abort();
+                    _tr.destroy();
+                    delete v.transport;
+                }
+            });
+
+            file.setStatus( Status.CANCELLED );
+            this.owner.trigger( 'fileDequeued', file );
+        },
+
+        /**
          * 判断`Uplaode`r是否正在上传中。
          * @grammar isInProgress() => Boolean
          * @method isInProgress
@@ -247,7 +363,7 @@ define([
             return !!this.runing;
         },
 
-        getStats: function() {
+        _getStats: function() {
             return this.request('get-stats');
         },
 
@@ -258,7 +374,7 @@ define([
          * @for  Uploader
          */
         skipFile: function( file, status ) {
-            file = this.request( 'get-file', file );
+            file = file.id ? file : this.request( 'get-file', file );
 
             file.setStatus( status || Status.COMPLETE );
             file.skipped = true;
@@ -307,7 +423,7 @@ define([
                 me._promise = isPromise( val ) ? val.always( fn ) : fn( val );
 
             // 没有要上传的了，且没有正在传输的了。
-            } else if ( !me.remaning && !me.getStats().numOfQueue ) {
+            } else if ( !me.remaning && !me._getStats().numOfQueue ) {
                 me.runing = false;
 
                 me._trigged || Base.nextTick(function() {
@@ -317,28 +433,46 @@ define([
             }
         },
 
+        _getStack: function() {
+            var i = 0,
+                act;
+
+            while ( (act = this.stack[ i++ ]) ) {
+                if ( act.has() && act.file.getStatus() === Status.PROGRESS ) {
+                    return act;
+                } else if (!act.has() ||
+                        act.file.getStatus() !== Status.PROGRESS ||
+                        act.file.getStatus() !== Status.INTERRUPT ) {
+
+                    // 把已经处理完了的，或者，状态为非 progress（上传中）、
+                    // interupt（暂停中） 的移除。
+                    this.stack.splice( --i, 1 );
+                }
+            }
+
+            return null;
+        },
+
         _nextBlock: function() {
             var me = this,
-                act = me._act,
                 opts = me.options,
-                next, done;
+                act, next, done;
 
             // 如果当前文件还有没有需要传输的，则直接返回剩下的。
-            if ( act && act.has() &&
-                    act.file.getStatus() === Status.PROGRESS ) {
+            if ( (act = this._getStack()) ) {
 
                 // 是否提前准备下一个文件
                 if ( opts.prepareNextFile && !me.pending.length ) {
                     me._prepareNextFile();
                 }
 
-                return act.fetch();
+                return act.shift();
 
             // 否则，如果正在运行，则准备下一个文件，并等待完成后返回下个分片。
             } else if ( me.runing ) {
 
                 // 如果缓存中有，则直接在缓存中取，没有则去queue中取。
-                if ( !me.pending.length && me.getStats().numOfQueue ) {
+                if ( !me.pending.length && me._getStats().numOfQueue ) {
                     me._prepareNextFile();
                 }
 
@@ -349,13 +483,13 @@ define([
                     }
 
                     act = CuteFile( file, opts.chunked ? opts.chunkSize : 0 );
-                    me._act = act;
-                    return act.fetch();
+                    me.stack.push(act);
+                    return act.shift();
                 };
 
                 // 文件可能还在prepare中，也有可能已经完全准备好了。
                 return isPromise( next ) ?
-                        next[ next.pipe ? 'pipe' : 'then']( done ) :
+                        next[ next.pipe ? 'pipe' : 'then' ]( done ) :
                         done( next );
             }
         },
@@ -461,6 +595,7 @@ define([
          * @event uploadBeforeSend
          * @param {Object} object
          * @param {Object} data 默认的上传参数，可以扩展此对象来控制上传参数。
+         * @param {Object} headers 可以扩展此对象来控制上传头部。
          * @description 当某个文件的分块在发送前触发，主要用来询问是否要添加附带参数，大文件在开起分片上传的前提下此事件可能会触发多次。
          * @for  Uploader
          */

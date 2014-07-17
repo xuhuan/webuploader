@@ -16,14 +16,14 @@ styles:
     
     <p>Web Uploader内部类的详细说明，以下提及的功能类，都可以在<code>WebUploader</code>这个变量中访问到。</p>
 <p>As you know, Web Uploader的每个文件都是用过<a href="https://github.com/amdjs/amdjs-api/wiki/AMD">AMD</a>规范中的<code>define</code>组织起来的, 每个Module都会有个module id.
-默认module id该文件的路径，而此路径将会转化成名字空间存放在WebUploader中。如：</p>
+默认module id为该文件的路径，而此路径将会转化成名字空间存放在WebUploader中。如：</p>
 <ul>
 <li>module <code>base</code>：WebUploader.Base</li>
 <li>module <code>file</code>: WebUploader.File</li>
 <li>module <code>lib/dnd</code>: WebUploader.Lib.Dnd</li>
 <li>module <code>runtime/html5/dnd</code>: WebUploader.Runtime.Html5.Dnd</li>
 </ul>
-<p>以下文档将可能省略<code>WebUploader</code>前缀。</p>
+<p>以下文档中对类的使用可能省略掉了<code>WebUploader</code>前缀。</p>
 
 </div>
 
@@ -67,6 +67,12 @@ styles:
                     
 
                     <li class="method">
+                        <a class="" href="#WebUploader_Uploader_destroy">destroy</a>
+                    </li>
+                    
+                    
+
+                    <li class="method">
                         <a class="" href="#WebUploader_Uploader_addButton">addButton</a>
                     </li>
                     
@@ -74,6 +80,12 @@ styles:
 
                     <li class="method">
                         <a class="" href="#WebUploader_Uploader_makeThumb">makeThumb</a>
+                    </li>
+                    
+                    
+
+                    <li class="method">
+                        <a class="" href="#WebUploader_Uploader_md5File">md5File</a>
                     </li>
                     
                     
@@ -133,6 +145,12 @@ styles:
                     
 
                     <li class="method">
+                        <a class="" href="#WebUploader_Uploader_cancelFile">cancelFile</a>
+                    </li>
+                    
+                    
+
+                    <li class="method">
                         <a class="" href="#WebUploader_Uploader_isInProgress">isInProgress</a>
                     </li>
                     
@@ -146,6 +164,18 @@ styles:
 
                     <li class="method">
                         <a class="" href="#WebUploader_Uploader_request">request</a>
+                    </li>
+                    
+                    
+
+                    <li class="method">
+                        <a class="" href="#WebUploader_Uploader_Uploader_register">Uploader.register</a>
+                    </li>
+                    
+                    
+
+                    <li class="method">
+                        <a class="" href="#WebUploader_Uploader_Uploader_unRegister">Uploader.unRegister</a>
                     </li>
                     
                 </ul>
@@ -399,6 +429,12 @@ styles:
                         <a class="" href="#WebUploader_Queue_getFiles">getFiles</a>
                     </li>
                     
+                    
+
+                    <li class="method">
+                        <a class="" href="#WebUploader_Queue_removeFile">removeFile</a>
+                    </li>
+                    
                 </ul>
             </li>
         
@@ -471,6 +507,18 @@ var uploader = WebUploader.Uploader({
                  [默认值：undefined] 
             </span>
             <p>  指定Drag And Drop拖拽的容器，如果不指定，则不启动。</p>
+
+            
+        </li>
+        
+        <li>
+            <span class="meta">
+                <code>disableGlobalDnd</code>
+                 {Selector} 
+                 [可选] 
+                 [默认值：false] 
+            </span>
+            <p>  是否禁掉整个页面的拖拽功能，如果不禁用，图片拖进来的时候会默认被浏览器打开。</p>
 
             
         </li>
@@ -587,7 +635,14 @@ var uploader = WebUploader.Uploader({
     crop: false,
 
     // 是否保留头部meta信息。
-    preserveHeaders: true
+    preserveHeaders: true,
+
+    // 如果发现压缩后文件大小比原来还大，则使用原来图片
+    // 此属性可能会影响图片自动纠正功能
+    noCompressIfLarger: false,
+
+    // 单位字节，如果图片大小小于此值，不会采用压缩。
+    compressSize: 0
 }
 {% endhighlight %}
 
@@ -827,6 +882,15 @@ var uploader = WebUploader.Uploader({
         </tr>
         
         <tr>
+            <td><code>reset</code></td>
+            <td class="events-tb-desc">
+                
+            </td>
+            <td><p>当 uploader 被重置的时候触发。</p>
+</td>
+        </tr>
+        
+        <tr>
             <td><code>startUpload</code></td>
             <td class="events-tb-desc">
                 
@@ -870,6 +934,7 @@ var uploader = WebUploader.Uploader({
             <td class="events-tb-desc">
                 
                 <ul class="params-list"><li><span class="meta"><code>object</code> {Object}</span></li><li><span class="meta"><code>data</code> {Object}</span><p>默认的上传参数，可以扩展此对象来控制上传参数。</p>
+</li><li><span class="meta"><code>headers</code> {Object}</span><p>可以扩展此对象来控制上传头部。</p>
 </li></ul>
                 
             </td>
@@ -1033,11 +1098,40 @@ uploader.option( 'compress', {
     <p>获取文件统计信息。返回一个包含一下信息的对象。</p>
 <ul>
 <li><code>successNum</code> 上传成功的文件数</li>
+<li><code>successNum</code> 上传中的文件数</li>
 <li><code>uploadFailNum</code> 上传失败的文件数</li>
 <li><code>cancelNum</code> 被删除的文件数</li>
 <li><code>invalidNum</code> 无效的文件数</li>
 <li><code>queueNum</code> 还在队列中的文件数</li>
 </ul>
+
+    
+</article>
+
+
+
+
+<article class="clearfix method">
+    <h3 id="WebUploader_Uploader_destroy"  >destroy
+        
+    </h3>
+    
+
+    
+
+    
+    <ul class="signature">
+        
+        <li>destroy() 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
+    </ul>
+    
+    
+    
+
+    <p>销毁 webuploader 实例</p>
 
     
 </article>
@@ -1144,6 +1238,56 @@ uploader.on( 'fileQueued', function( file ) {
 
 
 <article class="clearfix method">
+    <h3 id="WebUploader_Uploader_md5File"  >md5File
+        
+    </h3>
+    
+
+    
+
+    
+    <ul class="signature">
+        
+        <li>md5File( file[, start[, end]] ) 
+            <span class="return">⇒  promise</span>
+            
+        </li>
+    </ul>
+    
+    
+    
+
+    <p>计算文件 md5 值，返回一个 promise 对象，可以监听 progress 进度。</p>
+
+    
+        
+{% highlight javascript %}
+uploader.on( 'fileQueued', function( file ) {
+    var $li = ...;
+
+    uploader.md5File( file )
+
+        // 及时显示进度
+        .progress(function(percentage) {
+            console.log('Percentage:', percentage);
+        })
+
+        // 完成
+        .then(function(val) {
+            console.log('md5 result:', val);
+        });
+
+});
+{% endhighlight %}
+
+
+    
+</article>
+
+
+
+
+<article class="clearfix method">
     <h3 id="WebUploader_Uploader_addFiles"  >addFiles
         
     </h3>
@@ -1198,6 +1342,14 @@ uploader.on( 'fileQueued', function( file ) {
             <span class="return">⇒  undefined</span>
             
         </li>
+        <li>removeFile( file, true ) 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
+        <li>removeFile( id, true ) 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
     </ul>
     
     
@@ -1207,7 +1359,7 @@ uploader.on( 'fileQueued', function( file ) {
     
     
 
-    <p>移除某一文件。</p>
+    <p>移除某一文件, 默认只会标记文件状态为已取消，如果第二个参数为 <code>true</code> 则会从 queue 中移除。</p>
 
     
         
@@ -1411,12 +1563,17 @@ uploader.reset();
             <span class="return">⇒  undefined</span>
             
         </li>
+        <li>upload( file | fileId) 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
     </ul>
     
     
     
 
     <p>开始上传。此方法可以从初始状态调用开始上传流程，也可以从暂停状态调用，继续上传流程。</p>
+<p>可以指定开始某一个文件。</p>
 
     
 </article>
@@ -1443,12 +1600,62 @@ uploader.reset();
             <span class="return">⇒  undefined</span>
             
         </li>
+        <li>stop( file ) 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
     </ul>
     
     
     
 
     <p>暂停上传。第一个参数为是否中断上传当前正在上传的文件。</p>
+<p>如果第一个参数是文件，则只暂停指定文件。</p>
+
+    
+</article>
+
+
+
+
+<article class="clearfix method">
+    <h3 id="WebUploader_Uploader_cancelFile"  >cancelFile
+        
+    </h3>
+    
+
+    
+
+    
+    <ul class="signature">
+        
+        <li>cancelFile( file ) 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
+        <li>cancelFile( id ) 
+            <span class="return">⇒  undefined</span>
+            
+        </li>
+    </ul>
+    
+    
+        <p>参数: </p>
+        <ul class="params-list"><li><span class="meta"><code>file</code> {File, id}</span><p>File对象或这File对象的id</p>
+</li></ul>
+    
+    
+
+    <p>标记文件状态为已取消, 同时将中断文件传输。</p>
+
+    
+        
+{% highlight javascript %}
+$li.on('click', '.remove-this', function() {
+    uploader.cancelFile( file );
+})
+{% endhighlight %}
+
 
     
 </article>
@@ -1537,6 +1744,108 @@ uploader.reset();
     
 
     <p>发送命令。当传入<code>callback</code>或者<code>handler</code>中返回<code>promise</code>时。返回一个当所有<code>handler</code>中的promise都完成后完成的新<code>promise</code>。</p>
+
+    
+</article>
+
+
+
+
+<article class="clearfix method">
+    <h3 id="WebUploader_Uploader_Uploader_register"  >Uploader.register
+        
+    </h3>
+    
+
+    
+
+    
+    <ul class="signature">
+        
+        <li>Uploader.register(proto);
+            
+            
+        </li>
+        <li>Uploader.register(map, proto);
+            
+            
+        </li>
+    </ul>
+    
+    
+        <p>参数: </p>
+        <ul class="params-list"><li><span class="meta"><code>responseMap</code> {object}</span><p>API 名称与函数实现的映射</p>
+</li><li><span class="meta"><code>proto</code> {object}</span><p>组件原型，构造函数通过 constructor 属性定义</p>
+</li></ul>
+    
+    
+
+    <p>添加组件</p>
+
+    
+        
+{% highlight javascript %}
+Uploader.register({
+    'make-thumb': 'makeThumb'
+}, {
+    init: function( options ) {},
+    makeThumb: function() {}
+});
+
+Uploader.register({
+    'make-thumb': function() {
+
+    }
+});
+{% endhighlight %}
+
+
+    
+</article>
+
+
+
+
+<article class="clearfix method">
+    <h3 id="WebUploader_Uploader_Uploader_unRegister"  >Uploader.unRegister
+        
+    </h3>
+    
+
+    
+
+    
+    <ul class="signature">
+        
+        <li>Uploader.unRegister(name);
+            
+            
+        </li>
+    </ul>
+    
+    
+        <p>参数: </p>
+        <ul class="params-list"><li><span class="meta"><code>name</code> {string}</span><p>组件名字</p>
+</li></ul>
+    
+    
+
+    <p>删除插件，只有在注册时指定了名字的才能被删除。</p>
+
+    
+        
+{% highlight javascript %}
+Uploader.register({
+    name: 'custom',
+
+    'make-thumb': function() {
+
+    }
+});
+
+Uploader.unRegister('custom');
+{% endhighlight %}
+
 
     
 </article>
@@ -1840,7 +2149,7 @@ var doSomething = function() {
     
     
 
-    <p>引用Console.log如果存在的话，否则引用一个<a href="#WebUploader_Base_log">空函数loop</a>。</p>
+    <p>引用Console.log如果存在的话，否则引用一个<a href="#WebUploader_Base_noop">空函数noop</a>。</p>
 
     
 </article>
@@ -2628,10 +2937,11 @@ obj.on( 'all', function( type, arg1, arg2 ) {
 <ul>
 <li><code>numOfQueue</code> 队列中的文件数。</li>
 <li><code>numOfSuccess</code> 上传成功的文件数</li>
-<li><code>numOfCancel</code> 被移除的文件数</li>
+<li><code>numOfCancel</code> 被取消的文件数</li>
 <li><code>numOfProgress</code> 正在上传中的文件数</li>
 <li><code>numOfUploadFailed</code> 上传错误的文件数。</li>
 <li><code>numOfInvalid</code> 无效的文件数。</li>
+<li><code>numofDeleted</code> 被移除的文件数。</li>
 </ul>
 
     
@@ -2808,6 +3118,37 @@ obj.on( 'all', function( type, arg1, arg2 ) {
     
 
     <p>获取指定类型的文件列表, 列表中每一个成员为<a href="#WebUploader_File">File</a>对象。</p>
+
+    
+</article>
+
+
+
+
+<article class="clearfix method">
+    <h3 id="WebUploader_Queue_removeFile"  >removeFile
+        
+    </h3>
+    
+
+    
+
+    
+    <ul class="signature">
+        
+        <li>removeFile( file ) 
+            <span class="return">⇒  Array</span>
+            
+        </li>
+    </ul>
+    
+    
+        <p>参数: </p>
+        <ul class="params-list"><li><span class="meta"><code>文件对象。</code> {File}</span></li></ul>
+    
+    
+
+    <p>在队列中删除文件。</p>
 
     
 </article>

@@ -16,17 +16,6 @@ define([
         Status = WUFile.Status;
 
     return Uploader.register({
-        'sort-files': 'sortFiles',
-        'add-file': 'addFiles',
-        'get-file': 'getFile',
-        'fetch-file': 'fetchFile',
-        'get-stats': 'getStats',
-        'get-files': 'getFiles',
-        'remove-file': 'removeFile',
-        'retry': 'retry',
-        'reset': 'reset',
-        'accept-file': 'acceptFile'
-    }, {
 
         init: function( opts ) {
             var me = this,
@@ -66,7 +55,7 @@ define([
             // 创建一个 html5 运行时的 placeholder
             // 以至于外部添加原生 File 对象的时候能正确包裹一下供 webuploader 使用。
             deferred = Base.Deferred();
-            runtime = new RuntimeClient('Placeholder');
+            this.placeholder = runtime = new RuntimeClient('Placeholder');
             runtime.connectRuntime({
                 runtimeOrder: 'html5'
             }, function() {
@@ -96,7 +85,7 @@ define([
 
         // 判断文件是否可以被加入队列
         acceptFile: function( file ) {
-            var invalid = !file || file.size < 6 || this.accept &&
+            var invalid = !file || !file.size || this.accept &&
 
                     // 如果名字中有后缀，才做后缀白名单处理。
                     rExt.exec( file.name ) && !this.accept.test( file.name );
@@ -159,7 +148,7 @@ define([
          * @description 添加文件到队列
          * @for  Uploader
          */
-        addFiles: function( files ) {
+        addFile: function( files ) {
             var me = this;
 
             if ( !files.length ) {
@@ -175,7 +164,7 @@ define([
             if ( me.options.auto ) {
                 setTimeout(function() {
                     me.request('start-upload');
-                }, 20);
+                }, 20 );
             }
         },
 
@@ -190,12 +179,14 @@ define([
          * @for  Uploader
          */
 
-        /**
+         /**
          * @method removeFile
          * @grammar removeFile( file ) => undefined
          * @grammar removeFile( id ) => undefined
+         * @grammar removeFile( file, true ) => undefined
+         * @grammar removeFile( id, true ) => undefined
          * @param {File|id} file File对象或这File对象的id
-         * @description 移除某一文件。
+         * @description 移除某一文件, 默认只会标记文件状态为已取消，如果第二个参数为 `true` 则会从 queue 中移除。
          * @for  Uploader
          * @example
          *
@@ -203,13 +194,16 @@ define([
          *     uploader.removeFile( file );
          * })
          */
-        removeFile: function( file ) {
+        removeFile: function( file, remove ) {
             var me = this;
 
             file = file.id ? file : me.queue.getFile( file );
 
-            file.setStatus( Status.CANCELLED );
-            me.owner.trigger( 'fileDequeued', file );
+            this.request( 'cancel-file', file );
+
+            if ( remove ) {
+                this.queue.removeFile( file );
+            }
         },
 
         /**
@@ -275,6 +269,12 @@ define([
         },
 
         /**
+         * @event reset
+         * @description 当 uploader 被重置的时候触发。
+         * @for  Uploader
+         */
+
+        /**
          * @method reset
          * @grammar reset() => undefined
          * @description 重置uploader。目前只重置了队列。
@@ -283,8 +283,14 @@ define([
          * uploader.reset();
          */
         reset: function() {
+            this.owner.trigger('reset');
             this.queue = new Queue();
             this.stats = this.queue.stats;
+        },
+
+        destroy: function() {
+            this.reset();
+            this.placeholder && this.placeholder.destroy();
         }
     });
 

@@ -1,4 +1,4 @@
-/*! WebUploader 0.1.4 */
+/*! WebUploader 0.1.5 */
 
 
 var jQuery = require('example:widget/ui/jquery/jquery.js')
@@ -93,14 +93,14 @@ return (function( root, factory ) {
             return obj;
         },
 
-        makeExprot = function( dollar ) {
+        makeExport = function( dollar ) {
             root.__dollar = dollar;
 
             // exports every module.
             return exportsTo( factory( root, _define, _require ) );
         };
 
-    return makeExprot( jQuery );
+    return makeExport( jQuery );
 })( window, function( window, define, require ) {
 
 
@@ -155,7 +155,7 @@ return (function( root, factory ) {
      * Web Uploader内部类的详细说明，以下提及的功能类，都可以在`WebUploader`这个变量中访问到。
      *
      * As you know, Web Uploader的每个文件都是用过[AMD](https://github.com/amdjs/amdjs-api/wiki/AMD)规范中的`define`组织起来的, 每个Module都会有个module id.
-     * 默认module id该文件的路径，而此路径将会转化成名字空间存放在WebUploader中。如：
+     * 默认module id为该文件的路径，而此路径将会转化成名字空间存放在WebUploader中。如：
      *
      * * module `base`：WebUploader.Base
      * * module `file`: WebUploader.File
@@ -163,7 +163,7 @@ return (function( root, factory ) {
      * * module `runtime/html5/dnd`: WebUploader.Runtime.Html5.Dnd
      *
      *
-     * 以下文档将可能省略`WebUploader`前缀。
+     * 以下文档中对类的使用可能省略掉了`WebUploader`前缀。
      * @module WebUploader
      * @title WebUploader API文档
      */
@@ -211,7 +211,7 @@ return (function( root, factory ) {
             /**
              * @property {String} version 当前版本号。
              */
-            version: '0.1.4',
+            version: '0.1.5',
     
             /**
              * @property {jQuery|Zepto} $ 引用依赖的jQuery或者Zepto对象。
@@ -243,7 +243,7 @@ return (function( root, factory ) {
                         ua.match( /CriOS\/([\d.]+)/ ),
     
                     ie = ua.match( /MSIE\s([\d\.]+)/ ) ||
-                        ua.match(/(?:trident)(?:.*rv:([\w.]+))?/i),
+                        ua.match( /(?:trident)(?:.*rv:([\w.]+))?/i ),
                     firefox = ua.match( /Firefox\/([\d.]+)/ ),
                     safari = ua.match( /Safari\/([\d.]+)/ ),
                     opera = ua.match( /OPR\/([\d.]+)/ );
@@ -369,7 +369,7 @@ return (function( root, factory ) {
             bindFn: bindFn,
     
             /**
-             * 引用Console.log如果存在的话，否则引用一个[空函数loop](#WebUploader:Base.log)。
+             * 引用Console.log如果存在的话，否则引用一个[空函数noop](#WebUploader:Base.noop)。
              * @grammar Base.log( args... ) => undefined
              * @method log
              */
@@ -724,13 +724,15 @@ return (function( root, factory ) {
             addFiles: 'add-file',
             sort: 'sort-files',
             removeFile: 'remove-file',
+            cancelFile: 'cancel-file',
             skipFile: 'skip-file',
             retry: 'retry',
             isInProgress: 'is-in-progress',
             makeThumb: 'make-thumb',
+            md5File: 'md5-file',
             getDimension: 'get-dimension',
             addButton: 'add-btn',
-            getRuntimeType: 'get-runtime-type',
+            predictRuntmeType: 'predict-runtme-type',
             refresh: 'refresh',
             disable: 'disable',
             enable: 'enable',
@@ -792,6 +794,7 @@ return (function( root, factory ) {
             /**
              * 获取文件统计信息。返回一个包含一下信息的对象。
              * * `successNum` 上传成功的文件数
+             * * `successNum` 上传中的文件数
              * * `uploadFailNum` 上传失败的文件数
              * * `cancelNum` 被删除的文件数
              * * `invalidNum` 无效的文件数
@@ -803,8 +806,9 @@ return (function( root, factory ) {
                 // return this._mgr.getStats.apply( this._mgr, arguments );
                 var stats = this.request('get-stats');
     
-                return {
+                return stats ? {
                     successNum: stats.numOfSuccess,
+                    progressNum: stats.numOfProgress,
     
                     // who care?
                     // queueFailNum: 0,
@@ -812,7 +816,7 @@ return (function( root, factory ) {
                     invalidNum: stats.numOfInvalid,
                     uploadFailNum: stats.numOfUploadFailed,
                     queueNum: stats.numOfQueue
-                };
+                } : {};
             },
     
             // 需要重写此方法来来支持opts.onEvent和instance.onEvent的处理器
@@ -842,6 +846,16 @@ return (function( root, factory ) {
                 }
     
                 return true;
+            },
+    
+            /**
+             * 销毁 webuploader 实例
+             * @method destroy
+             * @grammar destroy() => undefined
+             */
+            destroy: function() {
+                this.request( 'destroy', arguments );
+                this.off();
             },
     
             // widgets/widget.js将补充此方法的详细文档。
@@ -919,6 +933,7 @@ return (function( root, factory ) {
                 parent.append( container );
                 parent.addClass('webuploader-container');
                 this._container = container;
+                this._parent = parent;
                 return container;
             },
     
@@ -926,10 +941,8 @@ return (function( root, factory ) {
             exec: Base.noop,
     
             destroy: function() {
-                if ( this._container ) {
-                    this._container.parentNode.removeChild( this.__container );
-                }
-    
+                this._container && this._container.remove();
+                this._parent && this._parent.removeClass('webuploader-container');
                 this.off();
             }
         });
@@ -1152,10 +1165,6 @@ return (function( root, factory ) {
                     me.exec('init');
                     me.trigger('ready');
                 });
-            },
-    
-            destroy: function() {
-                this.disconnectRuntime();
             }
         });
     
@@ -1173,6 +1182,7 @@ return (function( root, factory ) {
     
         var $ = Base.$,
             _init = Uploader.prototype._init,
+            _destroy = Uploader.prototype.destroy,
             IGNORE = {},
             widgetClass = [];
     
@@ -1254,7 +1264,7 @@ return (function( root, factory ) {
             request: function( apiName, args, callback ) {
                 var i = 0,
                     widgets = this._widgets,
-                    len = widgets.length,
+                    len = widgets && widgets.length,
                     rlts = [],
                     dfds = [],
                     widget, rlt, promise, key;
@@ -1282,50 +1292,112 @@ return (function( root, factory ) {
                     key = promise.pipe ? 'pipe' : 'then';
     
                     // 很重要不能删除。删除了会死循环。
-                    // 保证执行顺序。让callback总是在下一个tick中执行。
+                    // 保证执行顺序。让callback总是在下一个 tick 中执行。
                     return promise[ key ](function() {
                                 var deferred = Base.Deferred(),
                                     args = arguments;
     
+                                if ( args.length === 1 ) {
+                                    args = args[ 0 ];
+                                }
+    
                                 setTimeout(function() {
-                                    deferred.resolve.apply( deferred, args );
+                                    deferred.resolve( args );
                                 }, 1 );
     
                                 return deferred.promise();
-                            })[ key ]( callback || Base.noop );
+                            })[ callback ? key : 'done' ]( callback || Base.noop );
                 } else {
                     return rlts[ 0 ];
                 }
+            },
+    
+            destroy: function() {
+                _destroy.apply( this, arguments );
+                this._widgets = null;
             }
         });
     
         /**
          * 添加组件
-         * @param  {object} widgetProto 组件原型，构造函数通过constructor属性定义
-         * @param  {object} responseMap API名称与函数实现的映射
+         * @grammar Uploader.register(proto);
+         * @grammar Uploader.register(map, proto);
+         * @param  {object} responseMap API 名称与函数实现的映射
+         * @param  {object} proto 组件原型，构造函数通过 constructor 属性定义
+         * @method Uploader.register
+         * @for Uploader
          * @example
-         *     Uploader.register( {
-         *         init: function( options ) {},
-         *         makeThumb: function() {}
-         *     }, {
-         *         'make-thumb': 'makeThumb'
-         *     } );
+         * Uploader.register({
+         *     'make-thumb': 'makeThumb'
+         * }, {
+         *     init: function( options ) {},
+         *     makeThumb: function() {}
+         * });
+         *
+         * Uploader.register({
+         *     'make-thumb': function() {
+         *         
+         *     }
+         * });
          */
         Uploader.register = Widget.register = function( responseMap, widgetProto ) {
-            var map = { init: 'init' },
+            var map = { init: 'init', destroy: 'destroy', name: 'anonymous' },
                 klass;
     
             if ( arguments.length === 1 ) {
                 widgetProto = responseMap;
-                widgetProto.responseMap = map;
+    
+                // 自动生成 map 表。
+                $.each(widgetProto, function(key) {
+                    if ( key[0] === '_' || key === 'name' ) {
+                        key === 'name' && (map.name = widgetProto.name);
+                        return;
+                    }
+    
+                    map[key.replace(/[A-Z]/g, '-$&').toLowerCase()] = key;
+                });
+    
             } else {
-                widgetProto.responseMap = $.extend( map, responseMap );
+                map = $.extend( map, responseMap );
             }
     
+            widgetProto.responseMap = map;
             klass = Base.inherits( Widget, widgetProto );
+            klass._name = map.name;
             widgetClass.push( klass );
     
             return klass;
+        };
+    
+        /**
+         * 删除插件，只有在注册时指定了名字的才能被删除。
+         * @grammar Uploader.unRegister(name);
+         * @param  {string} name 组件名字
+         * @method Uploader.unRegister
+         * @for Uploader
+         * @example
+         *
+         * Uploader.register({
+         *     name: 'custom',
+         *     
+         *     'make-thumb': function() {
+         *         
+         *     }
+         * });
+         *
+         * Uploader.unRegister('custom');
+         */
+        Uploader.unRegister = Widget.unRegister = function( name ) {
+            if ( !name || name === 'anonymous' ) {
+                return;
+            }
+            
+            // 删除指定的插件。
+            for ( var i = widgetClass.length; i--; ) {
+                if ( widgetClass[i]._name === name ) {
+                    widgetClass.splice(i, 1)
+                }
+            }
         };
     
         return Widget;
@@ -1345,6 +1417,12 @@ return (function( root, factory ) {
     
         /**
          * @property {Selector} [dnd=undefined]  指定Drag And Drop拖拽的容器，如果不指定，则不启动。
+         * @namespace options
+         * @for Uploader
+         */
+        
+        /**
+         * @property {Selector} [disableGlobalDnd=false]  是否禁掉整个页面的拖拽功能，如果不禁用，图片拖进来的时候会默认被浏览器打开。
          * @namespace options
          * @for Uploader
          */
@@ -1372,7 +1450,7 @@ return (function( root, factory ) {
                     }),
                     dnd;
     
-                dnd = new Dnd( options );
+                this.dnd = dnd = new Dnd( options );
     
                 dnd.once( 'ready', deferred.resolve );
                 dnd.on( 'drop', function( files ) {
@@ -1387,6 +1465,10 @@ return (function( root, factory ) {
                 dnd.init();
     
                 return deferred.promise();
+            },
+    
+            destroy: function() {
+                this.dnd && this.dnd.destroy();
             }
         });
     });
@@ -1418,12 +1500,6 @@ return (function( root, factory ) {
                     me.exec('init');
                     me.trigger('ready');
                 });
-            },
-    
-            destroy: function() {
-                this.exec('destroy');
-                this.disconnectRuntime();
-                this.off();
             }
         });
     
@@ -1463,7 +1539,7 @@ return (function( root, factory ) {
                     }),
                     paste;
     
-                paste = new FilePaste( options );
+                this.paste = paste = new FilePaste( options );
     
                 paste.once( 'ready', deferred.resolve );
                 paste.on( 'paste', function( files ) {
@@ -1472,6 +1548,10 @@ return (function( root, factory ) {
                 paste.init();
     
                 return deferred.promise();
+            },
+    
+            destroy: function() {
+                this.paste && this.paste.destroy();
             }
         });
     });
@@ -1488,12 +1568,17 @@ return (function( root, factory ) {
     
             me.source = source;
             me.ruid = ruid;
+            this.size = source.size || 0;
+    
+            // 如果没有指定 mimetype, 但是知道文件后缀。
+            if ( !source.type && ~'jpg,jpeg,png,gif,bmp'.indexOf( this.ext ) ) {
+                this.type = 'image/' + (this.ext === 'jpg' ? 'jpeg' : this.ext);
+            } else {
+                this.type = source.type || 'application/octet-stream';
+            }
     
             RuntimeClient.call( me, 'Blob' );
-    
             this.uid = source.uid || this.uid;
-            this.type = source.type || 'application/octet-stream';
-            this.size = source.size || 0;
     
             if ( ruid ) {
                 me.connectRuntime( ruid );
@@ -1534,17 +1619,11 @@ return (function( root, factory ) {
             ext = rExt.exec( file.name ) ? RegExp.$1.toLowerCase() : '';
     
             // todo 支持其他类型文件的转换。
-    
-            // 如果有mimetype, 但是文件名里面没有找出后缀规律
+            // 如果有 mimetype, 但是文件名里面没有找出后缀规律
             if ( !ext && file.type ) {
                 ext = /\/(jpg|jpeg|png|gif|bmp)$/i.exec( file.type ) ?
                         RegExp.$1.toLowerCase() : '';
                 this.name += '.' + ext;
-            }
-    
-            // 如果没有指定mimetype, 但是知道文件后缀。
-            if ( !file.type && ~'jpg,jpeg,png,gif,bmp'.indexOf( ext ) ) {
-                this.type = file.type = 'image/' + (ext === 'jpg' ? 'jpeg' : ext);
             }
     
             this.ext = ext;
@@ -1638,9 +1717,8 @@ return (function( root, factory ) {
                     me.trigger('ready');
                 });
     
-                $( window ).on( 'resize', function() {
-                    me.refresh();
-                });
+                this._resizeHandler = Base.bindFn( this.refresh, this );
+                $( window ).on( 'resize', this._resizeHandler );
             },
     
             refresh: function() {
@@ -1680,10 +1758,10 @@ return (function( root, factory ) {
             },
     
             destroy: function() {
-                if ( this.runtime ) {
-                    this.exec('destroy');
-                    this.disconnectRuntime();
-                }
+                var btn = this.options.button;
+                $( window ).off( 'resize', this._resizeHandler );
+                btn.removeClass('webuploader-pick-disable webuploader-pick-hover ' +
+                    'webuploader-pick');
             }
         });
     
@@ -1744,15 +1822,10 @@ return (function( root, factory ) {
         });
     
         return Uploader.register({
-            'add-btn': 'addButton',
-            refresh: 'refresh',
-            disable: 'disable',
-            enable: 'enable'
-        }, {
     
             init: function( opts ) {
                 this.pickers = [];
-                return opts.pick && this.addButton( opts.pick );
+                return opts.pick && this.addBtn( opts.pick );
             },
     
             refresh: function() {
@@ -1773,38 +1846,46 @@ return (function( root, factory ) {
              *     innerHTML: '选择文件'
              * });
              */
-            addButton: function( pick ) {
+            addBtn: function( pick ) {
                 var me = this,
                     opts = me.options,
                     accept = opts.accept,
-                    options, picker, deferred;
+                    promises = [];
     
                 if ( !pick ) {
                     return;
                 }
-    
-                deferred = Base.Deferred();
+                
                 $.isPlainObject( pick ) || (pick = {
                     id: pick
                 });
     
-                options = $.extend({}, pick, {
-                    accept: $.isPlainObject( accept ) ? [ accept ] : accept,
-                    swf: opts.swf,
-                    runtimeOrder: opts.runtimeOrder
+                $( pick.id ).each(function() {
+                    var options, picker, deferred;
+    
+                    deferred = Base.Deferred();
+    
+                    options = $.extend({}, pick, {
+                        accept: $.isPlainObject( accept ) ? [ accept ] : accept,
+                        swf: opts.swf,
+                        runtimeOrder: opts.runtimeOrder,
+                        id: this
+                    });
+    
+                    picker = new FilePicker( options );
+    
+                    picker.once( 'ready', deferred.resolve );
+                    picker.on( 'select', function( files ) {
+                        me.owner.request( 'add-file', [ files ]);
+                    });
+                    picker.init();
+    
+                    me.pickers.push( picker );
+    
+                    promises.push( deferred.promise() );
                 });
     
-                picker = new FilePicker( options );
-    
-                picker.once( 'ready', deferred.resolve );
-                picker.on( 'select', function( files ) {
-                    me.owner.request( 'add-file', [ files ]);
-                });
-                picker.init();
-    
-                this.pickers.push( picker );
-    
-                return deferred.promise();
+                return Base.when.apply( Base, promises );
             },
     
             disable: function() {
@@ -1817,6 +1898,13 @@ return (function( root, factory ) {
                 $.each( this.pickers, function() {
                     this.enable();
                 });
+            },
+    
+            destroy: function() {
+                $.each( this.pickers, function() {
+                    this.destroy();
+                });
+                this.pickers = null;
             }
         });
     });
@@ -2023,7 +2111,14 @@ return (function( root, factory ) {
              *     crop: false,
              *
              *     // 是否保留头部meta信息。
-             *     preserveHeaders: true
+             *     preserveHeaders: true,
+             *
+             *     // 如果发现压缩后文件大小比原来还大，则使用原来图片
+             *     // 此属性可能会影响图片自动纠正功能
+             *     noCompressIfLarger: false,
+             *
+             *     // 单位字节，如果图片大小小于此值，不会采用压缩。
+             *     compressSize: 0
              * }
              * ```
              */
@@ -2038,9 +2133,6 @@ return (function( root, factory ) {
         });
     
         return Uploader.register({
-            'make-thumb': 'makeThumb',
-            'before-send-file': 'compressImage'
-        }, {
     
     
             /**
@@ -2101,8 +2193,6 @@ return (function( root, factory ) {
                 image = new Image( opts );
     
                 image.once( 'load', function() {
-                    var ret;
-    
                     file._info = file._info || image.info();
                     file._meta = file._meta || image.meta();
     
@@ -2126,8 +2216,8 @@ return (function( root, factory ) {
                     image.destroy();
                 });
     
-                image.once( 'error', function() {
-                    cb( true );
+                image.once( 'error', function( reason ) {
+                    cb( reason || true );
                     image.destroy();
                 });
     
@@ -2138,14 +2228,17 @@ return (function( root, factory ) {
                 });
             },
     
-            compressImage: function( file ) {
+            beforeSendFile: function( file ) {
                 var opts = this.options.compress || this.options.resize,
-                    compressSize = opts && opts.compressSize || 300 * 1024,
+                    compressSize = opts && opts.compressSize || 0,
+                    noCompressIfLarger = opts && opts.noCompressIfLarger || false,
                     image, deferred;
     
                 file = this.request( 'get-file', file );
     
-                // 只预览图片格式。
+                // 只压缩 jpeg 图片格式。
+                // gif 可能会丢失针
+                // bmp png 基本上尺寸都不大，且压缩比比较小。
                 if ( !opts || !~'image/jpeg,image/jpg'.indexOf( file.type ) ||
                         file.size < compressSize ||
                         file._compressed ) {
@@ -2195,7 +2288,7 @@ return (function( root, factory ) {
                         size = file.size;
     
                         // 如果压缩后，比原来还大则不用压缩后的。
-                        if ( blob.size < size ) {
+                        if ( !noCompressIfLarger || blob.size < size ) {
                             // file.source.destroy && file.source.destroy();
                             file.source = blob;
                             file.size = blob.size;
@@ -2370,6 +2463,7 @@ return (function( root, factory ) {
             },
     
             destory: function() {
+                this.off();
                 delete statusMap[ this.id ];
             }
         });
@@ -2428,10 +2522,11 @@ return (function( root, factory ) {
              * 统计文件数。
              * * `numOfQueue` 队列中的文件数。
              * * `numOfSuccess` 上传成功的文件数
-             * * `numOfCancel` 被移除的文件数
+             * * `numOfCancel` 被取消的文件数
              * * `numOfProgress` 正在上传中的文件数
              * * `numOfUploadFailed` 上传错误的文件数。
              * * `numOfInvalid` 无效的文件数。
+             * * `numofDeleted` 被移除的文件数。
              * @property {Object} stats
              */
             this.stats = {
@@ -2440,7 +2535,8 @@ return (function( root, factory ) {
                 numOfCancel: 0,
                 numOfProgress: 0,
                 numOfUploadFailed: 0,
-                numOfInvalid: 0
+                numOfInvalid: 0,
+                numofDeleted: 0
             };
     
             // 上传队列，仅包括等待上传的文件
@@ -2552,6 +2648,23 @@ return (function( root, factory ) {
                 return ret;
             },
     
+            /**
+             * 在队列中删除文件。
+             * @grammar removeFile( file ) => Array
+             * @method removeFile
+             * @param {File} 文件对象。
+             */
+            removeFile: function( file ) {
+                var me = this,
+                    existing = this._map[ file.id ];
+    
+                if ( existing ) {
+                    delete this._map[ file.id ];
+                    file.destroy();
+                    stats.numofDeleted++;
+                }
+            },
+    
             _fileAdded: function( file ) {
                 var me = this,
                     existing = this._map[ file.id ];
@@ -2563,8 +2676,6 @@ return (function( root, factory ) {
                         me._onFileStatusChange( cur, pre );
                     });
                 }
-    
-                file.setStatus( STATUS.QUEUED );
             },
     
             _onFileStatusChange: function( curStatus, preStatus ) {
@@ -2609,6 +2720,7 @@ return (function( root, factory ) {
                         stats.numOfCancel++;
                         break;
     
+    
                     case STATUS.INVALID:
                         stats.numOfInvalid++;
                         break;
@@ -2639,17 +2751,6 @@ return (function( root, factory ) {
             Status = WUFile.Status;
     
         return Uploader.register({
-            'sort-files': 'sortFiles',
-            'add-file': 'addFiles',
-            'get-file': 'getFile',
-            'fetch-file': 'fetchFile',
-            'get-stats': 'getStats',
-            'get-files': 'getFiles',
-            'remove-file': 'removeFile',
-            'retry': 'retry',
-            'reset': 'reset',
-            'accept-file': 'acceptFile'
-        }, {
     
             init: function( opts ) {
                 var me = this,
@@ -2689,7 +2790,7 @@ return (function( root, factory ) {
                 // 创建一个 html5 运行时的 placeholder
                 // 以至于外部添加原生 File 对象的时候能正确包裹一下供 webuploader 使用。
                 deferred = Base.Deferred();
-                runtime = new RuntimeClient('Placeholder');
+                this.placeholder = runtime = new RuntimeClient('Placeholder');
                 runtime.connectRuntime({
                     runtimeOrder: 'html5'
                 }, function() {
@@ -2719,7 +2820,7 @@ return (function( root, factory ) {
     
             // 判断文件是否可以被加入队列
             acceptFile: function( file ) {
-                var invalid = !file || file.size < 6 || this.accept &&
+                var invalid = !file || !file.size || this.accept &&
     
                         // 如果名字中有后缀，才做后缀白名单处理。
                         rExt.exec( file.name ) && !this.accept.test( file.name );
@@ -2782,7 +2883,7 @@ return (function( root, factory ) {
              * @description 添加文件到队列
              * @for  Uploader
              */
-            addFiles: function( files ) {
+            addFile: function( files ) {
                 var me = this;
     
                 if ( !files.length ) {
@@ -2798,7 +2899,7 @@ return (function( root, factory ) {
                 if ( me.options.auto ) {
                     setTimeout(function() {
                         me.request('start-upload');
-                    }, 20);
+                    }, 20 );
                 }
             },
     
@@ -2813,12 +2914,14 @@ return (function( root, factory ) {
              * @for  Uploader
              */
     
-            /**
+             /**
              * @method removeFile
              * @grammar removeFile( file ) => undefined
              * @grammar removeFile( id ) => undefined
+             * @grammar removeFile( file, true ) => undefined
+             * @grammar removeFile( id, true ) => undefined
              * @param {File|id} file File对象或这File对象的id
-             * @description 移除某一文件。
+             * @description 移除某一文件, 默认只会标记文件状态为已取消，如果第二个参数为 `true` 则会从 queue 中移除。
              * @for  Uploader
              * @example
              *
@@ -2826,13 +2929,16 @@ return (function( root, factory ) {
              *     uploader.removeFile( file );
              * })
              */
-            removeFile: function( file ) {
+            removeFile: function( file, remove ) {
                 var me = this;
     
                 file = file.id ? file : me.queue.getFile( file );
     
-                file.setStatus( Status.CANCELLED );
-                me.owner.trigger( 'fileDequeued', file );
+                this.request( 'cancel-file', file );
+    
+                if ( remove ) {
+                    this.queue.removeFile( file );
+                }
             },
     
             /**
@@ -2898,6 +3004,12 @@ return (function( root, factory ) {
             },
     
             /**
+             * @event reset
+             * @description 当 uploader 被重置的时候触发。
+             * @for  Uploader
+             */
+    
+            /**
              * @method reset
              * @grammar reset() => undefined
              * @description 重置uploader。目前只重置了队列。
@@ -2906,8 +3018,14 @@ return (function( root, factory ) {
              * uploader.reset();
              */
             reset: function() {
+                this.owner.trigger('reset');
                 this.queue = new Queue();
                 this.stats = this.queue.stats;
+            },
+    
+            destroy: function() {
+                this.reset();
+                this.placeholder && this.placeholder.destroy();
             }
         });
     
@@ -2926,11 +3044,9 @@ return (function( root, factory ) {
         };
     
         return Uploader.register({
-            'predict-runtime-type': 'predictRuntmeType'
-        }, {
     
             init: function() {
-                if ( !this.predictRuntmeType() ) {
+                if ( !this.predictRuntimeType() ) {
                     throw Error('Runtime Error');
                 }
             },
@@ -2941,7 +3057,7 @@ return (function( root, factory ) {
              * @method predictRuntmeType
              * @for  Uploader
              */
-            predictRuntmeType: function() {
+            predictRuntimeType: function() {
                 var orders = this.options.runtimeOrder || Runtime.orders,
                     type = this.type,
                     i, len;
@@ -3192,7 +3308,23 @@ return (function( root, factory ) {
                 chunks = chunkSize ? Math.ceil( total / chunkSize ) : 1,
                 start = 0,
                 index = 0,
-                len;
+                len, api;
+    
+            api = {
+                file: file,
+    
+                has: function() {
+                    return !!pending.length;
+                },
+    
+                shift: function() {
+                    return pending.shift();
+                },
+    
+                unshift: function( block ) {
+                    pending.unshift( block );
+                }
+            };
     
             while ( index < chunks ) {
                 len = Math.min( chunkSize, total - start );
@@ -3203,7 +3335,8 @@ return (function( root, factory ) {
                     end: chunkSize ? (start + len) : total,
                     total: total,
                     chunks: chunks,
-                    chunk: index++
+                    chunk: index++,
+                    cuted: api
                 });
                 start += len;
             }
@@ -3211,25 +3344,10 @@ return (function( root, factory ) {
             file.blocks = pending.concat();
             file.remaning = pending.length;
     
-            return {
-                file: file,
-    
-                has: function() {
-                    return !!pending.length;
-                },
-    
-                fetch: function() {
-                    return pending.shift();
-                }
-            };
+            return api;
         }
     
         Uploader.register({
-            'start-upload': 'start',
-            'stop-upload': 'stop',
-            'skip-file': 'skipFile',
-            'is-in-progress': 'isInProgress'
-        }, {
     
             init: function() {
                 var owner = this.owner;
@@ -3239,14 +3357,18 @@ return (function( root, factory ) {
                 // 记录当前正在传的数据，跟threads相关
                 this.pool = [];
     
+                // 缓存分好片的文件。
+                this.stack = [];
+    
                 // 缓存即将上传的文件。
                 this.pending = [];
     
-                // 跟踪还有多少分片没有完成上传。
+                // 跟踪还有多少分片在上传中但是没有完成上传。
                 this.remaning = 0;
                 this.__tick = Base.bindFn( this._tick, this );
     
                 owner.on( 'uploadComplete', function( file ) {
+                    
                     // 把其他块取消了。
                     file.blocks && $.each( file.blocks, function( _, v ) {
                         v.transport && (v.transport.abort(), v.transport.destroy());
@@ -3258,6 +3380,17 @@ return (function( root, factory ) {
                 });
             },
     
+            reset: function() {
+                this.request( 'stop-upload', true );
+                this.runing = false;
+                this.pool = [];
+                this.stack = [];
+                this.pending = [];
+                this.remaning = 0;
+                this._trigged = false;
+                this._promise = null;
+            },
+    
             /**
              * @event startUpload
              * @description 当开始上传流程时触发。
@@ -3266,17 +3399,48 @@ return (function( root, factory ) {
     
             /**
              * 开始上传。此方法可以从初始状态调用开始上传流程，也可以从暂停状态调用，继续上传流程。
+             *
+             * 可以指定开始某一个文件。
              * @grammar upload() => undefined
+             * @grammar upload( file | fileId) => undefined
              * @method upload
              * @for  Uploader
              */
-            start: function() {
+            startUpload: function(file) {
                 var me = this;
     
                 // 移出invalid的文件
                 $.each( me.request( 'get-files', Status.INVALID ), function() {
                     me.request( 'remove-file', this );
                 });
+    
+                // 如果指定了开始某个文件，则只开始指定文件。
+                if ( file ) {
+                    file = file.id ? file : me.request( 'get-file', file );
+    
+                    if (file.getStatus() === Status.INTERRUPT) {
+                        $.each( me.pool, function( _, v ) {
+                        
+                            // 之前暂停过。
+                            if (v.file !== file) {
+                                return;
+                            }
+    
+                            v.transport && v.transport.send();
+                        });
+                        
+                        file.setStatus( Status.QUEUED );
+                    } else if (file.getStatus() === Status.PROGRESS) {
+                        return;
+                    } else {
+                        file.setStatus( Status.QUEUED );
+                    }
+                } else {
+                    $.each( me.request( 'get-files', [ Status.INITED,
+                            Status.INTERRUPT ] ), function() {
+                        this.setStatus( Status.QUEUED );
+                    });
+                }
     
                 if ( me.runing ) {
                     return;
@@ -3295,9 +3459,14 @@ return (function( root, factory ) {
                     }
                 });
     
+                file || $.each( me.request( 'get-files',
+                        Status.INTERRUPT ), function() {
+                    this.setStatus( Status.QUEUED );
+                });
+    
                 me._trigged = false;
-                me.owner.trigger('startUpload');
                 Base.nextTick( me.__tick );
+                me.owner.trigger('startUpload');
             },
     
             /**
@@ -3308,16 +3477,48 @@ return (function( root, factory ) {
     
             /**
              * 暂停上传。第一个参数为是否中断上传当前正在上传的文件。
+             *
+             * 如果第一个参数是文件，则只暂停指定文件。
              * @grammar stop() => undefined
              * @grammar stop( true ) => undefined
+             * @grammar stop( file ) => undefined
              * @method stop
              * @for  Uploader
              */
-            stop: function( interrupt ) {
+            stopUpload: function( file, interrupt ) {
                 var me = this;
+    
+                if (file === true) {
+                    interrupt = file;
+                    file = null;
+                }
     
                 if ( me.runing === false ) {
                     return;
+                }
+    
+                // 如果只是暂停某个文件。
+                if ( file ) {
+                    file = file.id ? file : me.request( 'get-file', file );
+    
+                    if (file.getStatus() !== Status.PROGRESS) {
+                        return;
+                    }
+    
+                    file.setStatus( Status.INTERRUPT );
+                    $.each( me.pool, function( _, v ) {
+                        
+                        // 只 abort 指定的文件。
+                        if (v.file !== file) {
+                            return;
+                        }
+    
+                        v.transport && v.transport.abort();
+                        v.cuted.unshift(v);
+                        me._popBlock(v);
+                    });
+    
+                    return Base.nextTick( me.__tick );
                 }
     
                 me.runing = false;
@@ -3331,6 +3532,37 @@ return (function( root, factory ) {
             },
     
             /**
+             * @method cancelFile
+             * @grammar cancelFile( file ) => undefined
+             * @grammar cancelFile( id ) => undefined
+             * @param {File|id} file File对象或这File对象的id
+             * @description 标记文件状态为已取消, 同时将中断文件传输。
+             * @for  Uploader
+             * @example
+             *
+             * $li.on('click', '.remove-this', function() {
+             *     uploader.cancelFile( file );
+             * })
+             */
+            cancelFile: function( file ) {
+                file = file.id ? file : this.request( 'get-file', file );
+    
+                // 如果正在上传。
+                file.blocks && $.each( file.blocks, function( _, v ) {
+                    var _tr = v.transport;
+    
+                    if ( _tr ) {
+                        _tr.abort();
+                        _tr.destroy();
+                        delete v.transport;
+                    }
+                });
+    
+                file.setStatus( Status.CANCELLED );
+                this.owner.trigger( 'fileDequeued', file );
+            },
+    
+            /**
              * 判断`Uplaode`r是否正在上传中。
              * @grammar isInProgress() => Boolean
              * @method isInProgress
@@ -3340,7 +3572,7 @@ return (function( root, factory ) {
                 return !!this.runing;
             },
     
-            getStats: function() {
+            _getStats: function() {
                 return this.request('get-stats');
             },
     
@@ -3351,7 +3583,7 @@ return (function( root, factory ) {
              * @for  Uploader
              */
             skipFile: function( file, status ) {
-                file = this.request( 'get-file', file );
+                file = file.id ? file : this.request( 'get-file', file );
     
                 file.setStatus( status || Status.COMPLETE );
                 file.skipped = true;
@@ -3400,7 +3632,7 @@ return (function( root, factory ) {
                     me._promise = isPromise( val ) ? val.always( fn ) : fn( val );
     
                 // 没有要上传的了，且没有正在传输的了。
-                } else if ( !me.remaning && !me.getStats().numOfQueue ) {
+                } else if ( !me.remaning && !me._getStats().numOfQueue ) {
                     me.runing = false;
     
                     me._trigged || Base.nextTick(function() {
@@ -3410,28 +3642,46 @@ return (function( root, factory ) {
                 }
             },
     
+            _getStack: function() {
+                var i = 0,
+                    act;
+    
+                while ( (act = this.stack[ i++ ]) ) {
+                    if ( act.has() && act.file.getStatus() === Status.PROGRESS ) {
+                        return act;
+                    } else if (!act.has() ||
+                            act.file.getStatus() !== Status.PROGRESS ||
+                            act.file.getStatus() !== Status.INTERRUPT ) {
+    
+                        // 把已经处理完了的，或者，状态为非 progress（上传中）、
+                        // interupt（暂停中） 的移除。
+                        this.stack.splice( --i, 1 );
+                    }
+                }
+    
+                return null;
+            },
+    
             _nextBlock: function() {
                 var me = this,
-                    act = me._act,
                     opts = me.options,
-                    next, done;
+                    act, next, done;
     
                 // 如果当前文件还有没有需要传输的，则直接返回剩下的。
-                if ( act && act.has() &&
-                        act.file.getStatus() === Status.PROGRESS ) {
+                if ( (act = this._getStack()) ) {
     
                     // 是否提前准备下一个文件
                     if ( opts.prepareNextFile && !me.pending.length ) {
                         me._prepareNextFile();
                     }
     
-                    return act.fetch();
+                    return act.shift();
     
                 // 否则，如果正在运行，则准备下一个文件，并等待完成后返回下个分片。
                 } else if ( me.runing ) {
     
                     // 如果缓存中有，则直接在缓存中取，没有则去queue中取。
-                    if ( !me.pending.length && me.getStats().numOfQueue ) {
+                    if ( !me.pending.length && me._getStats().numOfQueue ) {
                         me._prepareNextFile();
                     }
     
@@ -3442,13 +3692,13 @@ return (function( root, factory ) {
                         }
     
                         act = CuteFile( file, opts.chunked ? opts.chunkSize : 0 );
-                        me._act = act;
-                        return act.fetch();
+                        me.stack.push(act);
+                        return act.shift();
                     };
     
                     // 文件可能还在prepare中，也有可能已经完全准备好了。
                     return isPromise( next ) ?
-                            next[ next.pipe ? 'pipe' : 'then']( done ) :
+                            next[ next.pipe ? 'pipe' : 'then' ]( done ) :
                             done( next );
                 }
             },
@@ -3554,6 +3804,7 @@ return (function( root, factory ) {
              * @event uploadBeforeSend
              * @param {Object} object
              * @param {Object} data 默认的上传参数，可以扩展此对象来控制上传参数。
+             * @param {Object} headers 可以扩展此对象来控制上传头部。
              * @description 当某个文件的分块在发送前触发，主要用来询问是否要添加附带参数，大文件在开起分片上传的前提下此事件可能会触发多次。
              * @for  Uploader
              */
@@ -3793,8 +4044,10 @@ return (function( root, factory ) {
         Uploader.register({
             init: function() {
                 var me = this;
-                $.each( validators, function() {
-                    this.call( me.owner );
+                Base.nextTick(function() {
+                    $.each( validators, function() {
+                        this.call( me.owner );
+                    });
                 });
             }
         });
@@ -3837,7 +4090,7 @@ return (function( root, factory ) {
                 count--;
             });
     
-            uploader.on( 'uploadFinished', function() {
+            uploader.on( 'reset', function() {
                 count = 0;
             });
         });
@@ -3882,7 +4135,7 @@ return (function( root, factory ) {
                 count -= file.size;
             });
     
-            uploader.on( 'uploadFinished', function() {
+            uploader.on( 'reset', function() {
                 count = 0;
             });
         });
@@ -3965,11 +4218,124 @@ return (function( root, factory ) {
     
                 hash && (delete mapping[ hash ]);
             });
+    
+            uploader.on( 'reset', function() {
+                mapping = {};
+            });
         });
     
         return api;
     });
     
+    /**
+     * @fileOverview Md5
+     */
+    define('lib/md5',[
+        'runtime/client',
+        'mediator'
+    ], function( RuntimeClient, Mediator ) {
+    
+        function Md5() {
+            RuntimeClient.call( this, 'Md5' );
+        }
+    
+        // 让 Md5 具备事件功能。
+        Mediator.installTo( Md5.prototype );
+    
+        Md5.prototype.loadFromBlob = function( blob ) {
+            var me = this;
+    
+            if ( me.getRuid() ) {
+                me.disconnectRuntime();
+            }
+    
+            // 连接到blob归属的同一个runtime.
+            me.connectRuntime( blob.ruid, function() {
+                me.exec('init');
+                me.exec( 'loadFromBlob', blob );
+            });
+        };
+    
+        Md5.prototype.getResult = function() {
+            return this.exec('getResult');
+        };
+    
+        return Md5;
+    });
+    /**
+     * @fileOverview 图片操作, 负责预览图片和上传前压缩图片
+     */
+    define('widgets/md5',[
+        'base',
+        'uploader',
+        'lib/md5',
+        'lib/blob',
+        'widgets/widget'
+    ], function( Base, Uploader, Md5, Blob ) {
+    
+        return Uploader.register({
+    
+    
+            /**
+             * 计算文件 md5 值，返回一个 promise 对象，可以监听 progress 进度。
+             *
+             *
+             * @method md5File
+             * @grammar md5File( file[, start[, end]] ) => promise
+             * @for Uploader
+             * @example
+             *
+             * uploader.on( 'fileQueued', function( file ) {
+             *     var $li = ...;
+             *
+             *     uploader.md5File( file )
+             *
+             *         // 及时显示进度
+             *         .progress(function(percentage) {
+             *             console.log('Percentage:', percentage);
+             *         })
+             *
+             *         // 完成
+             *         .then(function(val) {
+             *             console.log('md5 result:', val);
+             *         });
+             *
+             * });
+             */
+            md5File: function( file, start, end ) {
+                var md5 = new Md5(),
+                    deferred = Base.Deferred(),
+                    blob = (file instanceof Blob) ? file :
+                        this.request( 'get-file', file ).source;
+    
+                md5.on( 'progress load', function( e ) {
+                    e = e || {};
+                    deferred.notify( e.total ? e.loaded / e.total : 1 );
+                });
+    
+                md5.on( 'complete', function() {
+                    deferred.resolve( md5.getResult() );
+                });
+    
+                md5.on( 'error', function( reason ) {
+                    deferred.reject( reason );
+                });
+    
+                if ( arguments.length > 1 ) {
+                    start = start || 0;
+                    end = end || 0;
+                    start < 0 && (start = blob.size + start);
+                    end < 0 && (end = blob.size + end);
+                    end = Math.min( end, blob.size );
+                    blob = blob.slice( start, end );
+                }
+    
+                md5.loadFromBlob( blob );
+    
+                return deferred.promise();
+            }
+        });
+    });
     /**
      * @fileOverview Runtime管理器，负责Runtime的选择, 连接
      */
@@ -4140,7 +4506,6 @@ return (function( root, factory ) {
                             'removeClass' ]( prefix + 'denied' );
                 }
     
-    
                 e.dataTransfer.dropEffect = denied ? 'none' : 'copy';
     
                 return false;
@@ -4176,14 +4541,29 @@ return (function( root, factory ) {
             _dropHandler: function( e ) {
                 var me = this,
                     ruid = me.getRuid(),
-                    parentElem = me.elem.parent().get( 0 );
+                    parentElem = me.elem.parent().get( 0 ),
+                    dataTransfer, data;
     
                 // 只处理框内的。
                 if ( parentElem && !$.contains( parentElem, e.currentTarget ) ) {
                     return false;
                 }
     
-                me._getTansferFiles( e, function( results ) {
+                e = e.originalEvent || e;
+                dataTransfer = e.dataTransfer;
+    
+                // 如果是页面内拖拽，还不能处理，不阻止事件。
+                // 此处 ie11 下会报参数错误，
+                try {
+                    data = dataTransfer.getData('text/html');
+                } catch( err ) {
+                }
+    
+                if ( data ) {
+                    return;
+                }
+    
+                me._getTansferFiles( dataTransfer, function( results ) {
                     me.trigger( 'drop', $.map( results, function( file ) {
                         return new File( ruid, file );
                     }) );
@@ -4195,14 +4575,11 @@ return (function( root, factory ) {
             },
     
             // 如果传入 callback 则去查看文件夹，否则只管当前文件夹。
-            _getTansferFiles: function( e, callback ) {
+            _getTansferFiles: function( dataTransfer, callback ) {
                 var results  = [],
                     promises = [],
-                    items, files, dataTransfer, file, item, i, len, canAccessFolder;
+                    items, files, file, item, i, len, canAccessFolder;
     
-                e = e.originalEvent || e;
-    
-                dataTransfer = e.dataTransfer;
                 items = dataTransfer.items;
                 files = dataTransfer.files;
     
@@ -4265,8 +4642,13 @@ return (function( root, factory ) {
             destroy: function() {
                 var elem = this.elem;
     
+                // 还没 init 就调用 destroy
+                if (!elem) {
+                    return;
+                }
+                
                 elem.off( 'dragenter', this.dragEnterHandler );
-                elem.off( 'dragover', this.dragEnterHandler );
+                elem.off( 'dragover', this.dragOverHandler );
                 elem.off( 'dragleave', this.dragLeaveHandler );
                 elem.off( 'drop', this.dropHandler );
     
@@ -4361,19 +4743,19 @@ return (function( root, factory ) {
                     me = this,
                     owner = me.owner,
                     opts = me.options,
-                    lable = $( document.createElement('label') ),
-                    input = $( document.createElement('input') ),
+                    label = this.label = $( document.createElement('label') ),
+                    input =  this.input = $( document.createElement('input') ),
                     arr, i, len, mouseHandler;
     
                 input.attr( 'type', 'file' );
                 input.attr( 'name', opts.name );
                 input.addClass('webuploader-element-invisible');
     
-                lable.on( 'click', function() {
+                label.on( 'click', function() {
                     input.trigger('click');
                 });
     
-                lable.css({
+                label.css({
                     opacity: 0,
                     width: '100%',
                     height: '100%',
@@ -4398,7 +4780,7 @@ return (function( root, factory ) {
                 }
     
                 container.append( input );
-                container.append( lable );
+                container.append( label );
     
                 mouseHandler = function( e ) {
                     owner.trigger( e.type );
@@ -4422,7 +4804,7 @@ return (function( root, factory ) {
                     owner.trigger('change');
                 });
     
-                lable.on( 'mouseenter mouseleave', mouseHandler );
+                label.on( 'mouseenter mouseleave', mouseHandler );
     
             },
     
@@ -4432,7 +4814,8 @@ return (function( root, factory ) {
             },
     
             destroy: function() {
-                // todo
+                this.input.off();
+                this.label.off();
             }
         });
     });
@@ -5850,7 +6233,7 @@ return (function( root, factory ) {
                 this._resize( this._img, canvas, width, height );
                 this._blob = null;    // 没用了，可以删掉了。
                 this.modified = true;
-                this.owner.trigger('complete', 'resize');
+                this.owner.trigger( 'complete', 'resize' );
             },
     
             crop: function( x, y, w, h, s ) {
@@ -5860,8 +6243,7 @@ return (function( root, factory ) {
                     img = this._img,
                     iw = img.naturalWidth,
                     ih = img.naturalHeight,
-                    orientation = this.getOrientation(),
-                    tmp;
+                    orientation = this.getOrientation();
     
                 s = s || 1;
     
@@ -5889,7 +6271,7 @@ return (function( root, factory ) {
     
                 this._blob = null;    // 没用了，可以删掉了。
                 this.modified = true;
-                this.owner.trigger('complete', 'crop');
+                this.owner.trigger( 'complete', 'crop' );
             },
     
             getAsBlob: function( type ) {
@@ -6084,7 +6466,7 @@ return (function( root, factory ) {
     
                 // 如果不是ios, 不需要这么复杂！
                 if ( !Base.os.ios ) {
-                    return function( canvas, img, x, y, w, h ) {
+                    return function( canvas ) {
                         var args = Base.slice( arguments, 1 ),
                             ctx = canvas.getContext('2d');
     
@@ -6139,8 +6521,8 @@ return (function( root, factory ) {
                             vertSquashRatio = detectVerticalSquash( img, iw, ih );
     
                         return canvas.getContext('2d').drawImage( img, 0, 0,
-                            iw * vertSquashRatio, ih * vertSquashRatio,
-                            x, y, w, h );
+                                iw * vertSquashRatio, ih * vertSquashRatio,
+                                x, y, w, h );
                     };
                 }
     
@@ -6390,6 +6772,641 @@ return (function( root, factory ) {
         });
     });
     /**
+     * @fileOverview  Transport flash实现
+     */
+    define('runtime/html5/md5',[
+        'runtime/html5/runtime'
+    ], function( FlashRuntime ) {
+    
+        /*
+         * Fastest md5 implementation around (JKM md5)
+         * Credits: Joseph Myers
+         *
+         * @see http://www.myersdaily.org/joseph/javascript/md5-text.html
+         * @see http://jsperf.com/md5-shootout/7
+         */
+    
+        /* this function is much faster,
+          so if possible we use it. Some IEs
+          are the only ones I know of that
+          need the idiotic second function,
+          generated by an if clause.  */
+        var add32 = function (a, b) {
+            return (a + b) & 0xFFFFFFFF;
+        },
+    
+        cmn = function (q, a, b, x, s, t) {
+            a = add32(add32(a, q), add32(x, t));
+            return add32((a << s) | (a >>> (32 - s)), b);
+        },
+    
+        ff = function (a, b, c, d, x, s, t) {
+            return cmn((b & c) | ((~b) & d), a, b, x, s, t);
+        },
+    
+        gg = function (a, b, c, d, x, s, t) {
+            return cmn((b & d) | (c & (~d)), a, b, x, s, t);
+        },
+    
+        hh = function (a, b, c, d, x, s, t) {
+            return cmn(b ^ c ^ d, a, b, x, s, t);
+        },
+    
+        ii = function (a, b, c, d, x, s, t) {
+            return cmn(c ^ (b | (~d)), a, b, x, s, t);
+        },
+    
+        md5cycle = function (x, k) {
+            var a = x[0],
+                b = x[1],
+                c = x[2],
+                d = x[3];
+    
+            a = ff(a, b, c, d, k[0], 7, -680876936);
+            d = ff(d, a, b, c, k[1], 12, -389564586);
+            c = ff(c, d, a, b, k[2], 17, 606105819);
+            b = ff(b, c, d, a, k[3], 22, -1044525330);
+            a = ff(a, b, c, d, k[4], 7, -176418897);
+            d = ff(d, a, b, c, k[5], 12, 1200080426);
+            c = ff(c, d, a, b, k[6], 17, -1473231341);
+            b = ff(b, c, d, a, k[7], 22, -45705983);
+            a = ff(a, b, c, d, k[8], 7, 1770035416);
+            d = ff(d, a, b, c, k[9], 12, -1958414417);
+            c = ff(c, d, a, b, k[10], 17, -42063);
+            b = ff(b, c, d, a, k[11], 22, -1990404162);
+            a = ff(a, b, c, d, k[12], 7, 1804603682);
+            d = ff(d, a, b, c, k[13], 12, -40341101);
+            c = ff(c, d, a, b, k[14], 17, -1502002290);
+            b = ff(b, c, d, a, k[15], 22, 1236535329);
+    
+            a = gg(a, b, c, d, k[1], 5, -165796510);
+            d = gg(d, a, b, c, k[6], 9, -1069501632);
+            c = gg(c, d, a, b, k[11], 14, 643717713);
+            b = gg(b, c, d, a, k[0], 20, -373897302);
+            a = gg(a, b, c, d, k[5], 5, -701558691);
+            d = gg(d, a, b, c, k[10], 9, 38016083);
+            c = gg(c, d, a, b, k[15], 14, -660478335);
+            b = gg(b, c, d, a, k[4], 20, -405537848);
+            a = gg(a, b, c, d, k[9], 5, 568446438);
+            d = gg(d, a, b, c, k[14], 9, -1019803690);
+            c = gg(c, d, a, b, k[3], 14, -187363961);
+            b = gg(b, c, d, a, k[8], 20, 1163531501);
+            a = gg(a, b, c, d, k[13], 5, -1444681467);
+            d = gg(d, a, b, c, k[2], 9, -51403784);
+            c = gg(c, d, a, b, k[7], 14, 1735328473);
+            b = gg(b, c, d, a, k[12], 20, -1926607734);
+    
+            a = hh(a, b, c, d, k[5], 4, -378558);
+            d = hh(d, a, b, c, k[8], 11, -2022574463);
+            c = hh(c, d, a, b, k[11], 16, 1839030562);
+            b = hh(b, c, d, a, k[14], 23, -35309556);
+            a = hh(a, b, c, d, k[1], 4, -1530992060);
+            d = hh(d, a, b, c, k[4], 11, 1272893353);
+            c = hh(c, d, a, b, k[7], 16, -155497632);
+            b = hh(b, c, d, a, k[10], 23, -1094730640);
+            a = hh(a, b, c, d, k[13], 4, 681279174);
+            d = hh(d, a, b, c, k[0], 11, -358537222);
+            c = hh(c, d, a, b, k[3], 16, -722521979);
+            b = hh(b, c, d, a, k[6], 23, 76029189);
+            a = hh(a, b, c, d, k[9], 4, -640364487);
+            d = hh(d, a, b, c, k[12], 11, -421815835);
+            c = hh(c, d, a, b, k[15], 16, 530742520);
+            b = hh(b, c, d, a, k[2], 23, -995338651);
+    
+            a = ii(a, b, c, d, k[0], 6, -198630844);
+            d = ii(d, a, b, c, k[7], 10, 1126891415);
+            c = ii(c, d, a, b, k[14], 15, -1416354905);
+            b = ii(b, c, d, a, k[5], 21, -57434055);
+            a = ii(a, b, c, d, k[12], 6, 1700485571);
+            d = ii(d, a, b, c, k[3], 10, -1894986606);
+            c = ii(c, d, a, b, k[10], 15, -1051523);
+            b = ii(b, c, d, a, k[1], 21, -2054922799);
+            a = ii(a, b, c, d, k[8], 6, 1873313359);
+            d = ii(d, a, b, c, k[15], 10, -30611744);
+            c = ii(c, d, a, b, k[6], 15, -1560198380);
+            b = ii(b, c, d, a, k[13], 21, 1309151649);
+            a = ii(a, b, c, d, k[4], 6, -145523070);
+            d = ii(d, a, b, c, k[11], 10, -1120210379);
+            c = ii(c, d, a, b, k[2], 15, 718787259);
+            b = ii(b, c, d, a, k[9], 21, -343485551);
+    
+            x[0] = add32(a, x[0]);
+            x[1] = add32(b, x[1]);
+            x[2] = add32(c, x[2]);
+            x[3] = add32(d, x[3]);
+        },
+    
+        /* there needs to be support for Unicode here,
+           * unless we pretend that we can redefine the MD-5
+           * algorithm for multi-byte characters (perhaps
+           * by adding every four 16-bit characters and
+           * shortening the sum to 32 bits). Otherwise
+           * I suggest performing MD-5 as if every character
+           * was two bytes--e.g., 0040 0025 = @%--but then
+           * how will an ordinary MD-5 sum be matched?
+           * There is no way to standardize text to something
+           * like UTF-8 before transformation; speed cost is
+           * utterly prohibitive. The JavaScript standard
+           * itself needs to look at this: it should start
+           * providing access to strings as preformed UTF-8
+           * 8-bit unsigned value arrays.
+           */
+        md5blk = function (s) {
+            var md5blks = [],
+                i; /* Andy King said do it this way. */
+    
+            for (i = 0; i < 64; i += 4) {
+                md5blks[i >> 2] = s.charCodeAt(i) + (s.charCodeAt(i + 1) << 8) + (s.charCodeAt(i + 2) << 16) + (s.charCodeAt(i + 3) << 24);
+            }
+            return md5blks;
+        },
+    
+        md5blk_array = function (a) {
+            var md5blks = [],
+                i; /* Andy King said do it this way. */
+    
+            for (i = 0; i < 64; i += 4) {
+                md5blks[i >> 2] = a[i] + (a[i + 1] << 8) + (a[i + 2] << 16) + (a[i + 3] << 24);
+            }
+            return md5blks;
+        },
+    
+        md51 = function (s) {
+            var n = s.length,
+                state = [1732584193, -271733879, -1732584194, 271733878],
+                i,
+                length,
+                tail,
+                tmp,
+                lo,
+                hi;
+    
+            for (i = 64; i <= n; i += 64) {
+                md5cycle(state, md5blk(s.substring(i - 64, i)));
+            }
+            s = s.substring(i - 64);
+            length = s.length;
+            tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            for (i = 0; i < length; i += 1) {
+                tail[i >> 2] |= s.charCodeAt(i) << ((i % 4) << 3);
+            }
+            tail[i >> 2] |= 0x80 << ((i % 4) << 3);
+            if (i > 55) {
+                md5cycle(state, tail);
+                for (i = 0; i < 16; i += 1) {
+                    tail[i] = 0;
+                }
+            }
+    
+            // Beware that the final length might not fit in 32 bits so we take care of that
+            tmp = n * 8;
+            tmp = tmp.toString(16).match(/(.*?)(.{0,8})$/);
+            lo = parseInt(tmp[2], 16);
+            hi = parseInt(tmp[1], 16) || 0;
+    
+            tail[14] = lo;
+            tail[15] = hi;
+    
+            md5cycle(state, tail);
+            return state;
+        },
+    
+        md51_array = function (a) {
+            var n = a.length,
+                state = [1732584193, -271733879, -1732584194, 271733878],
+                i,
+                length,
+                tail,
+                tmp,
+                lo,
+                hi;
+    
+            for (i = 64; i <= n; i += 64) {
+                md5cycle(state, md5blk_array(a.subarray(i - 64, i)));
+            }
+    
+            // Not sure if it is a bug, however IE10 will always produce a sub array of length 1
+            // containing the last element of the parent array if the sub array specified starts
+            // beyond the length of the parent array - weird.
+            // https://connect.microsoft.com/IE/feedback/details/771452/typed-array-subarray-issue
+            a = (i - 64) < n ? a.subarray(i - 64) : new Uint8Array(0);
+    
+            length = a.length;
+            tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            for (i = 0; i < length; i += 1) {
+                tail[i >> 2] |= a[i] << ((i % 4) << 3);
+            }
+    
+            tail[i >> 2] |= 0x80 << ((i % 4) << 3);
+            if (i > 55) {
+                md5cycle(state, tail);
+                for (i = 0; i < 16; i += 1) {
+                    tail[i] = 0;
+                }
+            }
+    
+            // Beware that the final length might not fit in 32 bits so we take care of that
+            tmp = n * 8;
+            tmp = tmp.toString(16).match(/(.*?)(.{0,8})$/);
+            lo = parseInt(tmp[2], 16);
+            hi = parseInt(tmp[1], 16) || 0;
+    
+            tail[14] = lo;
+            tail[15] = hi;
+    
+            md5cycle(state, tail);
+    
+            return state;
+        },
+    
+        hex_chr = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'],
+    
+        rhex = function (n) {
+            var s = '',
+                j;
+            for (j = 0; j < 4; j += 1) {
+                s += hex_chr[(n >> (j * 8 + 4)) & 0x0F] + hex_chr[(n >> (j * 8)) & 0x0F];
+            }
+            return s;
+        },
+    
+        hex = function (x) {
+            var i;
+            for (i = 0; i < x.length; i += 1) {
+                x[i] = rhex(x[i]);
+            }
+            return x.join('');
+        },
+    
+        md5 = function (s) {
+            return hex(md51(s));
+        },
+    
+    
+    
+        ////////////////////////////////////////////////////////////////////////////
+    
+        /**
+         * SparkMD5 OOP implementation.
+         *
+         * Use this class to perform an incremental md5, otherwise use the
+         * static methods instead.
+         */
+        SparkMD5 = function () {
+            // call reset to init the instance
+            this.reset();
+        };
+    
+    
+        // In some cases the fast add32 function cannot be used..
+        if (md5('hello') !== '5d41402abc4b2a76b9719d911017c592') {
+            add32 = function (x, y) {
+                var lsw = (x & 0xFFFF) + (y & 0xFFFF),
+                    msw = (x >> 16) + (y >> 16) + (lsw >> 16);
+                return (msw << 16) | (lsw & 0xFFFF);
+            };
+        }
+    
+    
+        /**
+         * Appends a string.
+         * A conversion will be applied if an utf8 string is detected.
+         *
+         * @param {String} str The string to be appended
+         *
+         * @return {SparkMD5} The instance itself
+         */
+        SparkMD5.prototype.append = function (str) {
+            // converts the string to utf8 bytes if necessary
+            if (/[\u0080-\uFFFF]/.test(str)) {
+                str = unescape(encodeURIComponent(str));
+            }
+    
+            // then append as binary
+            this.appendBinary(str);
+    
+            return this;
+        };
+    
+        /**
+         * Appends a binary string.
+         *
+         * @param {String} contents The binary string to be appended
+         *
+         * @return {SparkMD5} The instance itself
+         */
+        SparkMD5.prototype.appendBinary = function (contents) {
+            this._buff += contents;
+            this._length += contents.length;
+    
+            var length = this._buff.length,
+                i;
+    
+            for (i = 64; i <= length; i += 64) {
+                md5cycle(this._state, md5blk(this._buff.substring(i - 64, i)));
+            }
+    
+            this._buff = this._buff.substr(i - 64);
+    
+            return this;
+        };
+    
+        /**
+         * Finishes the incremental computation, reseting the internal state and
+         * returning the result.
+         * Use the raw parameter to obtain the raw result instead of the hex one.
+         *
+         * @param {Boolean} raw True to get the raw result, false to get the hex result
+         *
+         * @return {String|Array} The result
+         */
+        SparkMD5.prototype.end = function (raw) {
+            var buff = this._buff,
+                length = buff.length,
+                i,
+                tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                ret;
+    
+            for (i = 0; i < length; i += 1) {
+                tail[i >> 2] |= buff.charCodeAt(i) << ((i % 4) << 3);
+            }
+    
+            this._finish(tail, length);
+            ret = !!raw ? this._state : hex(this._state);
+    
+            this.reset();
+    
+            return ret;
+        };
+    
+        /**
+         * Finish the final calculation based on the tail.
+         *
+         * @param {Array}  tail   The tail (will be modified)
+         * @param {Number} length The length of the remaining buffer
+         */
+        SparkMD5.prototype._finish = function (tail, length) {
+            var i = length,
+                tmp,
+                lo,
+                hi;
+    
+            tail[i >> 2] |= 0x80 << ((i % 4) << 3);
+            if (i > 55) {
+                md5cycle(this._state, tail);
+                for (i = 0; i < 16; i += 1) {
+                    tail[i] = 0;
+                }
+            }
+    
+            // Do the final computation based on the tail and length
+            // Beware that the final length may not fit in 32 bits so we take care of that
+            tmp = this._length * 8;
+            tmp = tmp.toString(16).match(/(.*?)(.{0,8})$/);
+            lo = parseInt(tmp[2], 16);
+            hi = parseInt(tmp[1], 16) || 0;
+    
+            tail[14] = lo;
+            tail[15] = hi;
+            md5cycle(this._state, tail);
+        };
+    
+        /**
+         * Resets the internal state of the computation.
+         *
+         * @return {SparkMD5} The instance itself
+         */
+        SparkMD5.prototype.reset = function () {
+            this._buff = "";
+            this._length = 0;
+            this._state = [1732584193, -271733879, -1732584194, 271733878];
+    
+            return this;
+        };
+    
+        /**
+         * Releases memory used by the incremental buffer and other aditional
+         * resources. If you plan to use the instance again, use reset instead.
+         */
+        SparkMD5.prototype.destroy = function () {
+            delete this._state;
+            delete this._buff;
+            delete this._length;
+        };
+    
+    
+        /**
+         * Performs the md5 hash on a string.
+         * A conversion will be applied if utf8 string is detected.
+         *
+         * @param {String}  str The string
+         * @param {Boolean} raw True to get the raw result, false to get the hex result
+         *
+         * @return {String|Array} The result
+         */
+        SparkMD5.hash = function (str, raw) {
+            // converts the string to utf8 bytes if necessary
+            if (/[\u0080-\uFFFF]/.test(str)) {
+                str = unescape(encodeURIComponent(str));
+            }
+    
+            var hash = md51(str);
+    
+            return !!raw ? hash : hex(hash);
+        };
+    
+        /**
+         * Performs the md5 hash on a binary string.
+         *
+         * @param {String}  content The binary string
+         * @param {Boolean} raw     True to get the raw result, false to get the hex result
+         *
+         * @return {String|Array} The result
+         */
+        SparkMD5.hashBinary = function (content, raw) {
+            var hash = md51(content);
+    
+            return !!raw ? hash : hex(hash);
+        };
+    
+        /**
+         * SparkMD5 OOP implementation for array buffers.
+         *
+         * Use this class to perform an incremental md5 ONLY for array buffers.
+         */
+        SparkMD5.ArrayBuffer = function () {
+            // call reset to init the instance
+            this.reset();
+        };
+    
+        ////////////////////////////////////////////////////////////////////////////
+    
+        /**
+         * Appends an array buffer.
+         *
+         * @param {ArrayBuffer} arr The array to be appended
+         *
+         * @return {SparkMD5.ArrayBuffer} The instance itself
+         */
+        SparkMD5.ArrayBuffer.prototype.append = function (arr) {
+            // TODO: we could avoid the concatenation here but the algorithm would be more complex
+            //       if you find yourself needing extra performance, please make a PR.
+            var buff = this._concatArrayBuffer(this._buff, arr),
+                length = buff.length,
+                i;
+    
+            this._length += arr.byteLength;
+    
+            for (i = 64; i <= length; i += 64) {
+                md5cycle(this._state, md5blk_array(buff.subarray(i - 64, i)));
+            }
+    
+            // Avoids IE10 weirdness (documented above)
+            this._buff = (i - 64) < length ? buff.subarray(i - 64) : new Uint8Array(0);
+    
+            return this;
+        };
+    
+        /**
+         * Finishes the incremental computation, reseting the internal state and
+         * returning the result.
+         * Use the raw parameter to obtain the raw result instead of the hex one.
+         *
+         * @param {Boolean} raw True to get the raw result, false to get the hex result
+         *
+         * @return {String|Array} The result
+         */
+        SparkMD5.ArrayBuffer.prototype.end = function (raw) {
+            var buff = this._buff,
+                length = buff.length,
+                tail = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                i,
+                ret;
+    
+            for (i = 0; i < length; i += 1) {
+                tail[i >> 2] |= buff[i] << ((i % 4) << 3);
+            }
+    
+            this._finish(tail, length);
+            ret = !!raw ? this._state : hex(this._state);
+    
+            this.reset();
+    
+            return ret;
+        };
+    
+        SparkMD5.ArrayBuffer.prototype._finish = SparkMD5.prototype._finish;
+    
+        /**
+         * Resets the internal state of the computation.
+         *
+         * @return {SparkMD5.ArrayBuffer} The instance itself
+         */
+        SparkMD5.ArrayBuffer.prototype.reset = function () {
+            this._buff = new Uint8Array(0);
+            this._length = 0;
+            this._state = [1732584193, -271733879, -1732584194, 271733878];
+    
+            return this;
+        };
+    
+        /**
+         * Releases memory used by the incremental buffer and other aditional
+         * resources. If you plan to use the instance again, use reset instead.
+         */
+        SparkMD5.ArrayBuffer.prototype.destroy = SparkMD5.prototype.destroy;
+    
+        /**
+         * Concats two array buffers, returning a new one.
+         *
+         * @param  {ArrayBuffer} first  The first array buffer
+         * @param  {ArrayBuffer} second The second array buffer
+         *
+         * @return {ArrayBuffer} The new array buffer
+         */
+        SparkMD5.ArrayBuffer.prototype._concatArrayBuffer = function (first, second) {
+            var firstLength = first.length,
+                result = new Uint8Array(firstLength + second.byteLength);
+    
+            result.set(first);
+            result.set(new Uint8Array(second), firstLength);
+    
+            return result;
+        };
+    
+        /**
+         * Performs the md5 hash on an array buffer.
+         *
+         * @param {ArrayBuffer} arr The array buffer
+         * @param {Boolean}     raw True to get the raw result, false to get the hex result
+         *
+         * @return {String|Array} The result
+         */
+        SparkMD5.ArrayBuffer.hash = function (arr, raw) {
+            var hash = md51_array(new Uint8Array(arr));
+    
+            return !!raw ? hash : hex(hash);
+        };
+        
+        return FlashRuntime.register( 'Md5', {
+            init: function() {
+                // do nothing.
+            },
+    
+            loadFromBlob: function( file ) {
+                var blob = file.getSource(),
+                    chunkSize = 2 * 1024 * 1024,
+                    chunks = Math.ceil( blob.size / chunkSize ),
+                    chunk = 0,
+                    owner = this.owner,
+                    spark = new SparkMD5.ArrayBuffer(),
+                    me = this,
+                    blobSlice = blob.mozSlice || blob.webkitSlice || blob.slice,
+                    loadNext, fr;
+    
+                fr = new FileReader();
+    
+                loadNext = function() {
+                    var start, end;
+    
+                    start = chunk * chunkSize;
+                    end = Math.min( start + chunkSize, blob.size );
+    
+                    fr.onload = function( e ) {
+                        spark.append( e.target.result );
+                        owner.trigger( 'progress', {
+                            total: file.size,
+                            loaded: end
+                        });
+                    };
+    
+                    fr.onloadend = function() {
+                        fr.onloadend = fr.onload = null;
+    
+                        if ( ++chunk < chunks ) {
+                            setTimeout( loadNext, 1 );
+                        } else {
+                            setTimeout(function(){
+                                owner.trigger('load');
+                                me.result = spark.end();
+                                loadNext = file = blob = spark = null;
+                                owner.trigger('complete');
+                            }, 50 );
+                        }
+                    };
+    
+                    fr.readAsArrayBuffer( blobSlice.call( blob, start, end ) );
+                };
+    
+                loadNext();
+            },
+    
+            getResult: function() {
+                return this.result;
+            }
+        });
+    });
+    /**
      * @fileOverview FlashRuntime
      */
     define('runtime/flash/runtime',[
@@ -6602,7 +7619,7 @@ return (function( root, factory ) {
             },
     
             destroy: function() {
-                // todo
+                this.flashExec( 'FilePicker', 'destroy' );
             }
         });
     });
@@ -6678,6 +7695,7 @@ return (function( root, factory ) {
                 xhr.exec( 'send', {
                     method: opts.method,
                     url: server,
+                    forceURLStream: opts.forceURLStream,
                     mimeType: 'application/octet-stream'
                 }, binary );
             },
@@ -6687,7 +7705,7 @@ return (function( root, factory ) {
             },
     
             getResponse: function() {
-                return this._response ? unescape( this._response ) : '';
+                return this._response || '';
             },
     
             getResponseAsJson: function() {
@@ -6720,22 +7738,41 @@ return (function( root, factory ) {
     
                 xhr.on( 'load', function() {
                     var status = xhr.exec('getStatus'),
-                        err = '';
+                        readBody = false,
+                        err = '',
+                        p;
     
                     xhr.off();
                     me._xhr = null;
     
                     if ( status >= 200 && status < 300 ) {
-                        me._response = xhr.exec('getResponse');
-                        me._responseJson = xhr.exec('getResponseAsJson');
+                        readBody = true;
                     } else if ( status >= 500 && status < 600 ) {
-                        me._response = xhr.exec('getResponse');
-                        me._responseJson = xhr.exec('getResponseAsJson');
+                        readBody = true;
                         err = 'server';
                     } else {
                         err = 'http';
                     }
     
+                    if ( readBody ) {
+                        me._response = xhr.exec('getResponse');
+                        me._response = decodeURIComponent( me._response );
+    
+                        // flash 处理可能存在 bug, 没辙只能靠 js 了
+                        try {
+                            me._responseJson = xhr.exec('getResponseAsJson');
+                        } catch ( error ) {
+                            p = window.JSON && window.JSON.parse || function( s ) {
+                                try {
+                                    return new Function('return ' + s).call();
+                                } catch ( err ) {
+                                    return {};
+                                }
+                            };
+                            me._responseJson  = p(me._response);
+                        }
+                    }
+                    
                     xhr.destroy();
                     xhr = null;
     
@@ -6760,6 +7797,23 @@ return (function( root, factory ) {
         });
     });
     /**
+     * @fileOverview  Md5 flash实现
+     */
+    define('runtime/flash/md5',[
+        'runtime/flash/runtime'
+    ], function( FlashRuntime ) {
+        
+        return FlashRuntime.register( 'Md5', {
+            init: function() {
+                // do nothing.
+            },
+    
+            loadFromBlob: function( blob ) {
+                return this.flashExec( 'Md5', 'loadFromBlob', blob.uid );
+            }
+        });
+    });
+    /**
      * @fileOverview 完全版本。
      */
     define('preset/all',[
@@ -6774,6 +7828,7 @@ return (function( root, factory ) {
         'widgets/runtime',
         'widgets/upload',
         'widgets/validator',
+        'widgets/md5',
     
         // runtimes
         // html5
@@ -6785,11 +7840,13 @@ return (function( root, factory ) {
         'runtime/html5/androidpatch',
         'runtime/html5/image',
         'runtime/html5/transport',
+        'runtime/html5/md5',
     
         // flash
         'runtime/flash/filepicker',
         'runtime/flash/image',
-        'runtime/flash/transport'
+        'runtime/flash/transport',
+        'runtime/flash/md5'
     ], function( Base ) {
         return Base;
     });

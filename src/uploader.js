@@ -41,13 +41,15 @@ define([
         addFiles: 'add-file',
         sort: 'sort-files',
         removeFile: 'remove-file',
+        cancelFile: 'cancel-file',
         skipFile: 'skip-file',
         retry: 'retry',
         isInProgress: 'is-in-progress',
         makeThumb: 'make-thumb',
+        md5File: 'md5-file',
         getDimension: 'get-dimension',
         addButton: 'add-btn',
-        getRuntimeType: 'get-runtime-type',
+        predictRuntmeType: 'predict-runtme-type',
         refresh: 'refresh',
         disable: 'disable',
         enable: 'enable',
@@ -109,6 +111,7 @@ define([
         /**
          * 获取文件统计信息。返回一个包含一下信息的对象。
          * * `successNum` 上传成功的文件数
+         * * `successNum` 上传中的文件数
          * * `uploadFailNum` 上传失败的文件数
          * * `cancelNum` 被删除的文件数
          * * `invalidNum` 无效的文件数
@@ -120,8 +123,9 @@ define([
             // return this._mgr.getStats.apply( this._mgr, arguments );
             var stats = this.request('get-stats');
 
-            return {
+            return stats ? {
                 successNum: stats.numOfSuccess,
+                progressNum: stats.numOfProgress,
 
                 // who care?
                 // queueFailNum: 0,
@@ -129,7 +133,7 @@ define([
                 invalidNum: stats.numOfInvalid,
                 uploadFailNum: stats.numOfUploadFailed,
                 queueNum: stats.numOfQueue
-            };
+            } : {};
         },
 
         // 需要重写此方法来来支持opts.onEvent和instance.onEvent的处理器
@@ -159,6 +163,16 @@ define([
             }
 
             return true;
+        },
+
+        /**
+         * 销毁 webuploader 实例
+         * @method destroy
+         * @grammar destroy() => undefined
+         */
+        destroy: function() {
+            this.request( 'destroy', arguments );
+            this.off();
         },
 
         // widgets/widget.js将补充此方法的详细文档。

@@ -41,8 +41,10 @@ define([
     Uploader.register({
         init: function() {
             var me = this;
-            $.each( validators, function() {
-                this.call( me.owner );
+            Base.nextTick(function() {
+                $.each( validators, function() {
+                    this.call( me.owner );
+                });
             });
         }
     });
@@ -85,7 +87,7 @@ define([
             count--;
         });
 
-        uploader.on( 'uploadFinished', function() {
+        uploader.on( 'reset', function() {
             count = 0;
         });
     });
@@ -130,7 +132,7 @@ define([
             count -= file.size;
         });
 
-        uploader.on( 'uploadFinished', function() {
+        uploader.on( 'reset', function() {
             count = 0;
         });
     });
@@ -212,6 +214,10 @@ define([
             var hash = file.__hash;
 
             hash && (delete mapping[ hash ]);
+        });
+
+        uploader.on( 'reset', function() {
+            mapping = {};
         });
     });
 

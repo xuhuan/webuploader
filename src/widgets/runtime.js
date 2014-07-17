@@ -12,11 +12,9 @@ define([
     };
 
     return Uploader.register({
-        'predict-runtime-type': 'predictRuntmeType'
-    }, {
 
         init: function() {
-            if ( !this.predictRuntmeType() ) {
+            if ( !this.predictRuntimeType() ) {
                 throw Error('Runtime Error');
             }
         },
@@ -27,7 +25,7 @@ define([
          * @method predictRuntmeType
          * @for  Uploader
          */
-        predictRuntmeType: function() {
+        predictRuntimeType: function() {
             var orders = this.options.runtimeOrder || Runtime.orders,
                 type = this.type,
                 i, len;

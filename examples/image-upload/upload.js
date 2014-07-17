@@ -152,9 +152,7 @@
             chunked: false,
             chunkSize: 512 * 1024,
             server: '../../server/fileupload.php',
-            // server: 'http://liaoxuezhi.fe.baidu.com/webupload/fileupload.php',
-            // server: 'http://www.2betop.net/fileupload.php',
-            //
+            // runtimeOrder: 'flash',
 
             // accept: {
             //     title: 'Images',
